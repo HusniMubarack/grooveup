@@ -1,4 +1,5 @@
 import type { Level, ServiceType } from "@prisma/client";
+import { execSync } from "node:child_process";
 import bcrypt from "bcryptjs";
 import { db } from "../lib/db";
 
@@ -118,6 +119,10 @@ const TEACHERS: {
 ];
 
 async function main() {
+  // Locally, make sure prisma/dev.db has the schema so `pnpm prisma db seed` works on a fresh clone.
+  // (Turso databases get their migrations from prisma/turso-setup.ts instead.)
+  if (!process.env.TURSO_DATABASE_URL) execSync("prisma migrate deploy", { stdio: "inherit" });
+
   // Wipe in dependency order so the seed is re-runnable.
   await db.auditLog.deleteMany();
   await db.report.deleteMany();

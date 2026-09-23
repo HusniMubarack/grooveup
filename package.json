@@ -12,7 +12,7 @@
     "db:turso": "tsx prisma/turso-setup.ts"
   },
   "prisma": {
-    "seed": "prisma migrate deploy && tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
