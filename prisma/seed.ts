@@ -1,7 +1,8 @@
 import type { Level, ServiceType } from "@prisma/client";
 import { execSync } from "node:child_process";
 import bcrypt from "bcryptjs";
-import { db, tursoUrl } from "../lib/db";
+import { db, tursoAuthToken, tursoUrl } from "../lib/db";
+import { applyTursoMigrations } from "./turso-migrate";
 
 // Public sample clips (Google's gtv-videos-bucket). Swap for your own footage any time.
 const V = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample";
@@ -119,9 +120,16 @@ const TEACHERS: {
 ];
 
 async function main() {
-  // Locally, make sure prisma/dev.db has the schema so `pnpm prisma db seed` works on a fresh clone.
-  // (Turso databases get their migrations from prisma/turso-setup.ts instead.)
-  if (!tursoUrl()) execSync("prisma migrate deploy", { stdio: "inherit" });
+  // Bring the schema up to date first, so seeding works on a brand-new database.
+  const turso = tursoUrl();
+  if (turso) {
+    console.log(`Seeding Turso database ${turso.replace(/\?.*$/, "")}`);
+    if (!tursoAuthToken() && !turso.startsWith("file:")) throw new Error("TURSO_AUTH_TOKEN is not set.");
+    await applyTursoMigrations(turso, tursoAuthToken());
+  } else {
+    console.log("Seeding local database prisma/dev.db");
+    execSync("prisma migrate deploy", { stdio: "inherit" });
+  }
 
   // Wipe in dependency order so the seed is re-runnable.
   await db.auditLog.deleteMany();
@@ -237,6 +245,12 @@ async function main() {
 main()
   .catch((e) => {
     console.error(e);
+    if (/401|unauthori[sz]ed/i.test(String(e?.message ?? e)))
+      console.error(
+        "\nTurso rejected TURSO_AUTH_TOKEN (HTTP 401). Check that the token belongs to this database\n" +
+          "(`turso db tokens create <db>`), is pasted whole on one line, and that no TURSO_* variable in\n" +
+          "your shell is overriding .env. To seed the local file instead, remove the TURSO_* lines from .env.",
+      );
     process.exit(1);
   })
   .finally(() => db.$disconnect());
