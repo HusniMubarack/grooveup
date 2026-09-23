@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  BOTH
+  ADMIN
+}
+
+enum ServiceType {
+  STEP
+  CHOREO
+  SESSION
+  DEMO
+}
+
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum SubStatus {
+  ACTIVE
+  CANCELED
+}
+
+enum OrderType {
+  SUBSCRIPTION
+  SERVICE
+}
+
+enum OrderStatus {
+  PAID
+}
+
+enum EntitlementSource {
+  PURCHASE
+  SUBSCRIPTION
+  FREE
+}
+
+enum ReportTarget {
+  USER
+  SERVICE
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(STUDENT)
+  banned       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  teacherProfile  TeacherProfile?
+  follows         Follow[]
+  subscriptions   Subscription[]
+  orders          Order[]
+  entitlements    Entitlement[]
+  practiceEvents  PracticeEvent[]
+  reportsFiled    Report[]        @relation("reporter")
+  reportsAgainst  Report[]        @relation("targetUser")
+  auditLogs       AuditLog[]
+}
+
+model TeacherProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handle            String   @unique
+  bio               String   @default("")
+  /// JSON-encoded string[] (SQLite has no scalar lists)
+  styles            String   @default("[]")
+  monthlyPricePaise Int      @default(49900)
+  verified          Boolean  @default(false)
+  featured          Boolean  @default(false)
+
+  services      Service[]
+  followers     Follow[]
+  subscriptions Subscription[]
+  entitlements  Entitlement[]
+}
+
+model Service {
+  id                 String         @id @default(cuid())
+  teacherId          String
+  teacher            TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  title              String
+  type               ServiceType
+  style              String
+  level              Level
+  description        String
+  durationSec        Int
+  teaserUrl          String
+  videoUrl           String
+  thumbnailUrl       String         @default("")
+  pricePaise         Int            @default(0)
+  includedInSub      Boolean        @default(false)
+  isFree             Boolean        @default(false)
+  published          Boolean        @default(false)
+  featured           Boolean        @default(false)
+  unpublishedByAdmin Boolean        @default(false)
+  unpublishedReason  String?
+  createdAt          DateTime       @default(now())
+
+  sections       ServiceSection[]
+  entitlements   Entitlement[]
+  practiceEvents PracticeEvent[]
+  orders         Order[]
+  reports        Report[]
+}
+
+model ServiceSection {
+  id        String  @id @default(cuid())
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  label     String
+  startSec  Int
+  endSec    Int
+}
+
+model Follow {
+  id        String         @id @default(cuid())
+  studentId String
+  student   User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId String
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, teacherId])
+}
+
+model Subscription {
+  id               String         @id @default(cuid())
+  studentId        String
+  student          User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId        String
+  teacher          TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  status           SubStatus      @default(ACTIVE)
+  currentPeriodEnd DateTime
+}
+
+/// teacherId / serviceId are optional links so commerce views can show "related teacher/service".
+model Order {
+  id          String          @id @default(cuid())
+  studentId   String
+  student     User            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  type        OrderType
+  amountPaise Int
+  status      OrderStatus     @default(PAID)
+  teacherId   String?
+  serviceId   String?
+  service     Service?        @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+}
+
+model Entitlement {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId String?
+  service   Service?          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  teacherId String?
+  teacher   TeacherProfile?   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  source    EntitlementSource
+}
+
+model PracticeEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId String
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  lastSec   Int      @default(0)
+  completed Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, serviceId])
+}
+
+model Report {
+  id              String       @id @default(cuid())
+  reporterId      String
+  reporter        User         @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType      ReportTarget
+  targetUserId    String?
+  targetUser      User?        @relation("targetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  targetServiceId String?
+  targetService   Service?     @relation(fields: [targetServiceId], references: [id], onDelete: Cascade)
+  reason          String
+  status          ReportStatus @default(OPEN)
+  createdAt       DateTime     @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  admin     User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  action    String
+  detail    String
+  createdAt DateTime @default(now())
+}

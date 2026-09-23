@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Dark studio + gold. shadcn-style tokens; the app is dark-only. */
+:root {
+  --background: #0b0a09;
+  --foreground: #f3efe6;
+  --card: #151311;
+  --card-foreground: #f3efe6;
+  --muted: #1f1c18;
+  --muted-foreground: #a39b8c;
+  --border: #2c2822;
+  --input: #2c2822;
+  --primary: #d4af37;
+  --primary-foreground: #1a1405;
+  --secondary: #26221c;
+  --secondary-foreground: #f3efe6;
+  --destructive: #dc4a3a;
+  --ring: #d4af37;
+  --radius: 0.75rem;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--ring);
+  --color-gold: var(--primary);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+}
+
+@layer base {
+  * { border-color: var(--border); }
+  body { background: var(--background); color: var(--foreground); -webkit-tap-highlight-color: transparent; }
+  input[type="range"] { accent-color: var(--primary); }
+}
