@@ -1,7 +1,7 @@
 import type { Level, ServiceType } from "@prisma/client";
 import { execSync } from "node:child_process";
 import bcrypt from "bcryptjs";
-import { db } from "../lib/db";
+import { db, tursoUrl } from "../lib/db";
 
 // Public sample clips (Google's gtv-videos-bucket). Swap for your own footage any time.
 const V = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample";
@@ -121,7 +121,7 @@ const TEACHERS: {
 async function main() {
   // Locally, make sure prisma/dev.db has the schema so `pnpm prisma db seed` works on a fresh clone.
   // (Turso databases get their migrations from prisma/turso-setup.ts instead.)
-  if (!process.env.TURSO_DATABASE_URL) execSync("prisma migrate deploy", { stdio: "inherit" });
+  if (!tursoUrl()) execSync("prisma migrate deploy", { stdio: "inherit" });
 
   // Wipe in dependency order so the seed is re-runnable.
   await db.auditLog.deleteMany();

@@ -6,9 +6,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@libsql/client";
+import { tursoUrl } from "../lib/db";
 
 async function main() {
-  const url = process.env.TURSO_DATABASE_URL;
+  const url = tursoUrl();
   if (!url) throw new Error("Set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN) first.");
   const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
 

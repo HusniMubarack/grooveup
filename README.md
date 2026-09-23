@@ -4,14 +4,27 @@ A dance-lesson marketplace for phones: teachers sell lessons, students practice 
 
 **Stack:** Next.js 15 (App Router) · TypeScript · Tailwind v4 + shadcn/ui-style components · Auth.js v5 Credentials · Prisma 6 + SQLite · plain HTML5 `<video>` · pnpm.
 
-## Run
+## Run locally
 
 ```bash
 cp .env.example .env     # then set AUTH_SECRET (openssl rand -base64 32)
 pnpm i
-pnpm prisma db seed      # applies migrations to prisma/dev.db, then wipes + loads demo data (re-runnable)
+pnpm prisma db seed      # creates prisma/dev.db, applies migrations, loads demo data (re-run to reset)
 pnpm dev                 # http://localhost:3000
 ```
+
+The local database is always the file `prisma/dev.db`. It doesn't read `DATABASE_URL`, so a `DATABASE_URL` left in your shell from another project can't break it. Delete `prisma/dev.db` and re-run the seed to start from scratch.
+
+### Run locally against Turso instead
+
+Add these to `.env` and run `pnpm dev`. The app then reads and writes the Turso database, the same one Vercel uses:
+
+```bash
+TURSO_DATABASE_URL="libsql://atelier-<you>.turso.io"
+TURSO_AUTH_TOKEN="…"
+```
+
+Comment them out to go back to `prisma/dev.db`. Note that `pnpm prisma db seed` and `pnpm db:turso` **wipe and reload** whichever database is configured, so don't run them against Turso once the demo has real data you care about.
 
 ## Deploy (Vercel + Turso, both free)
 
