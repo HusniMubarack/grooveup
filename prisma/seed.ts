@@ -1,7 +1,6 @@
-import { PrismaClient, type Level, type ServiceType } from "@prisma/client";
+import type { Level, ServiceType } from "@prisma/client";
 import bcrypt from "bcryptjs";
-
-const db = new PrismaClient();
+import { db } from "../lib/db";
 
 // Public sample clips (Google's gtv-videos-bucket). Swap for your own footage any time.
 const V = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample";

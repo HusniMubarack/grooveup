@@ -13,6 +13,32 @@ pnpm prisma db seed      # applies migrations to prisma/dev.db, then wipes + loa
 pnpm dev                 # http://localhost:3000
 ```
 
+## Deploy (Vercel + Turso, both free)
+
+Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's libSQL adapter. `lib/db.ts` uses Turso when `TURSO_DATABASE_URL` is set, and the local `prisma/dev.db` file otherwise.
+
+1. **Create the database.** Install the Turso CLI, then:
+   ```bash
+   turso auth signup                      # or: turso auth login
+   turso db create atelier
+   turso db show atelier --url            # → TURSO_DATABASE_URL (libsql://…)
+   turso db tokens create atelier         # → TURSO_AUTH_TOKEN
+   ```
+   (You can also do this in the Turso web dashboard.)
+2. **Load the schema and demo data** from your machine, once:
+   ```bash
+   TURSO_DATABASE_URL="libsql://…" TURSO_AUTH_TOKEN="…" pnpm db:turso
+   ```
+   This applies `prisma/migrations`, then runs the seed. Re-run it to reset the demo; new migrations are applied only once.
+3. **Deploy on Vercel.** Go to vercel.com → Add New → Project, import this repo, and keep the Next.js defaults. Add these environment variables:
+   | Name | Value |
+   | --- | --- |
+   | `AUTH_SECRET` | output of `openssl rand -base64 32` |
+   | `TURSO_DATABASE_URL` | from step 1 |
+   | `TURSO_AUTH_TOKEN` | from step 1 |
+
+   Then deploy. Every push to the production branch redeploys.
+
 ### Seed logins (password `password123`)
 
 | Email | Role | Notes |
