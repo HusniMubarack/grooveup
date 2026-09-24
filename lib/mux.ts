@@ -4,15 +4,30 @@ import { db } from "./db";
 
 /**
  * Mux video hosting. Everything is optional: without MUX_TOKEN_ID/SECRET the app keeps using pasted
- * MP4 URLs. Env names are the SDK's own: MUX_TOKEN_ID, MUX_TOKEN_SECRET (API), MUX_SIGNING_KEY,
- * MUX_PRIVATE_KEY (base64 key for signed playback).
+ * MP4 URLs. Env: MUX_TOKEN_ID, MUX_TOKEN_SECRET (API), MUX_SIGNING_KEY (key id) and MUX_PRIVATE_KEY
+ * (base64 private key) for signed playback.
  */
-export const muxEnabled = () => !!(process.env.MUX_TOKEN_ID && process.env.MUX_TOKEN_SECRET);
-export const muxSigningEnabled = () => !!(process.env.MUX_SIGNING_KEY && process.env.MUX_PRIVATE_KEY);
+const env = (...names: string[]) => {
+  for (const n of names) {
+    const v = process.env[n]?.trim().replace(/^["']|["']$/g, "").trim();
+    if (v) return v;
+  }
+  return undefined;
+};
+// The *_ID / *_PRIVATE spellings are accepted too, so either naming works in Vercel.
+const creds = () => ({
+  tokenId: env("MUX_TOKEN_ID"),
+  tokenSecret: env("MUX_TOKEN_SECRET"),
+  jwtSigningKey: env("MUX_SIGNING_KEY", "MUX_SIGNING_KEY_ID"),
+  jwtPrivateKey: env("MUX_PRIVATE_KEY", "MUX_SIGNING_KEY_PRIVATE"),
+});
+
+export const muxEnabled = () => !!(creds().tokenId && creds().tokenSecret);
+export const muxSigningEnabled = () => !!(creds().jwtSigningKey && creds().jwtPrivateKey);
 
 let client: Mux | null = null;
 function mux() {
-  client ??= new Mux(); // reads the MUX_* env vars (and MUX_BASE_URL, handy for tests)
+  client ??= new Mux(creds()); // MUX_BASE_URL is still read from the env (handy for tests)
   return client;
 }
 

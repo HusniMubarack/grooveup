@@ -52,6 +52,9 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
 
    Then deploy. Every push to the production branch redeploys.
 
+   **Migrations run automatically on every Vercel build** (`vercel-build` → `prisma/migrate.ts`): new columns are added to Turso before the new code goes live, existing data is kept, and if a migration fails the build fails and the previous deployment stays up. Run `pnpm db:migrate` to do the same by hand. `pnpm prisma db seed` is only for (re)loading the demo data, and it wipes the database.
+4. **Check the deployment:** sign in as `admin@grooveup.dev`. The **Setup** card on `/admin` shows the database, whether migrations are up to date, and whether Mux uploads and signed playback are configured (it only shows whether each is set, never the values).
+
 ## Video hosting (Mux)
 
 Teachers upload lesson videos from the Studio **straight to [Mux](https://www.mux.com)**: the file goes from their browser to Mux in resumable 5 MB chunks and never passes through this app or Vercel. Students stream it through the Groove up player (HLS, adaptive quality) with speed, mirror, sections and A–B loop.

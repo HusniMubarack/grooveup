@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { setupStatus } from "@/lib/setup-status";
 import { rupees } from "@/lib/utils";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Placeholder } from "@/components/placeholder";
 
 export default async function AdminOverview() {
-  const [users, teachers, published, activeSubs, openReports, gmv, logs, reports] = await Promise.all([
+  const [users, teachers, published, activeSubs, openReports, gmv, logs, reports, setup] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: { in: ["TEACHER", "BOTH"] } } }),
     db.service.count({ where: { published: true, unpublishedByAdmin: false } }),
@@ -14,6 +15,7 @@ export default async function AdminOverview() {
     db.order.aggregate({ _sum: { amountPaise: true } }),
     db.auditLog.findMany({ include: { admin: true }, orderBy: { createdAt: "desc" }, take: 10 }),
     db.report.findMany({ where: { status: "OPEN" }, include: { targetUser: true, targetService: true }, orderBy: { createdAt: "desc" }, take: 5 }),
+    setupStatus(),
   ]);
 
   const stats: [string, string | number][] = [
@@ -56,6 +58,19 @@ export default async function AdminOverview() {
           </ul>
         </section>
       </div>
+
+      <section>
+        <h2 className="mb-2 text-sm uppercase tracking-wide text-muted-foreground">Setup</h2>
+        <ul className="divide-y rounded-md border bg-card text-sm">
+          {setup.map((c) => (
+            <li key={c.label} className="flex items-center gap-2 p-2">
+              <span className={c.ok ? "text-emerald-400" : "text-destructive"}>{c.ok ? "✓" : "✕"}</span>
+              <span className="w-32 shrink-0 font-medium">{c.label}</span>
+              <span className="min-w-0 break-words text-xs text-muted-foreground">{c.detail}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <Placeholder title="Admin extras" action="Open settings">
         Refunds, teacher payout approval, email blasts, a CMS homepage builder, a fine-grained role matrix and 2FA for

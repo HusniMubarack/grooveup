@@ -9,7 +9,9 @@
     "lint": "tsc --noEmit",
     "db:reset": "prisma migrate reset --force",
     "postinstall": "prisma generate",
-    "db:turso": "tsx prisma/seed.ts"
+    "db:turso": "tsx prisma/seed.ts",
+    "vercel-build": "tsx prisma/migrate.ts && next build",
+    "db:migrate": "tsx prisma/migrate.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
