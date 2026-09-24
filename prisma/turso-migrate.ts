@@ -1,6 +1,7 @@
 /**
  * `prisma migrate` can't talk to Turso, so the seed applies prisma/migrations/*.sql itself,
- * tracking what has run in a small _atelier_migrations table.
+ * tracking what has run in a small _atelier_migrations table. (The name predates the Groove up
+ * rebrand; renaming it would make existing Turso databases re-run the init migration and fail.)
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

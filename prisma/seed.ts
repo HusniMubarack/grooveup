@@ -39,7 +39,7 @@ const TEACHERS: {
   services: Svc[];
 }[] = [
   {
-    email: "teacher@atelier.dev",
+    email: "teacher@grooveup.dev",
     name: "Kabir Rao",
     handle: "kabir",
     style: "Hip-Hop",
@@ -56,10 +56,13 @@ const TEACHERS: {
       { title: "'Night Shift' Full Choreography", type: "CHOREO", level: "ADVANCED", pricePaise: 39900, durationSec: 60,
         description: "A 32-count routine with hits, freezes and a floor transition. Filmed front and back.",
         sections: [["Counts 1–16", 0, 25], ["Counts 17–32", 25, 50], ["Full run", 50, 60]] },
+      { title: "Foundations Week 1: Groove, Bounce & Posture", type: "SESSION", level: "BEGINNER", includedInSub: true, durationSec: 60,
+        description: "The first class of the hip-hop course: stance, knee bounce and how to stay on the beat for a whole song.",
+        sections: [["Stance", 0, 20], ["Bounce on the beat", 20, 40], ["Freestyle minute", 40, 60]] },
     ],
   },
   {
-    email: "ananya@atelier.dev",
+    email: "ananya@grooveup.dev",
     name: "Ananya Iyer",
     handle: "ananya",
     style: "Bharatanatyam",
@@ -79,7 +82,7 @@ const TEACHERS: {
     ],
   },
   {
-    email: "minji@atelier.dev",
+    email: "minji@grooveup.dev",
     name: "Min-ji Park",
     handle: "minji",
     style: "K-Pop",
@@ -95,10 +98,13 @@ const TEACHERS: {
       { title: "Full Dance Cover: 'Starlight'", type: "CHOREO", level: "INTERMEDIATE", pricePaise: 29900, durationSec: 60,
         description: "Full cover choreography with formation notes for groups of four or five.",
         sections: [["Verse", 0, 20], ["Pre-chorus", 20, 35], ["Chorus", 35, 60]] },
+      { title: "Stage Presence & Facial Expressions", type: "SESSION", level: "INTERMEDIATE", includedInSub: true, durationSec: 60,
+        description: "Course class on selling a performance: camera angles, expressions and energy for filming covers.",
+        sections: [["Eyes & angles", 0, 20], ["Expressions", 20, 40], ["Film a take", 40, 60]] },
     ],
   },
   {
-    email: "diego@atelier.dev",
+    email: "diego@grooveup.dev",
     name: "Diego Fernandes",
     handle: "diego",
     style: "Salsa",
@@ -115,6 +121,9 @@ const TEACHERS: {
         unpublishedByAdmin: "Copyright claim: soundtrack is an unlicensed commercial recording.",
         description: "Six solo shines to drop into any social dance.",
         sections: [["Shine 1–2", 0, 20], ["Shine 3–4", 20, 40], ["Shine 5–6", 40, 60]] },
+      { title: "Partnerwork Session: Connection & Frame", type: "SESSION", level: "BEGINNER", includedInSub: true, durationSec: 60,
+        description: "Course class on leading and following: hand holds, frame tension and staying connected through turns.",
+        sections: [["Hand holds", 0, 20], ["Frame", 20, 40], ["Turn practice", 40, 60]] },
     ],
   },
 ];
@@ -148,7 +157,7 @@ async function main() {
   const daysAgo = (d: number) => new Date(Date.now() - d * 86400000);
 
   const admin = await db.user.create({
-    data: { email: "admin@atelier.dev", name: "Platform Admin", role: "ADMIN", passwordHash, createdAt: daysAgo(60) },
+    data: { email: "admin@grooveup.dev", name: "Platform Admin", role: "ADMIN", passwordHash, createdAt: daysAgo(60) },
   });
 
   const teachers: Record<string, { profileId: string; userId: string; services: { id: string; title: string }[] }> = {};
@@ -187,10 +196,10 @@ async function main() {
   }
 
   const student = await db.user.create({
-    data: { email: "student@atelier.dev", name: "Riya Sharma", role: "STUDENT", passwordHash, createdAt: daysAgo(20) },
+    data: { email: "student@grooveup.dev", name: "Riya Sharma", role: "STUDENT", passwordHash, createdAt: daysAgo(20) },
   });
   const arjun = await db.user.create({
-    data: { email: "arjun@atelier.dev", name: "Arjun Mehta", role: "STUDENT", passwordHash, createdAt: daysAgo(30) },
+    data: { email: "arjun@grooveup.dev", name: "Arjun Mehta", role: "STUDENT", passwordHash, createdAt: daysAgo(30) },
   });
 
   // Riya has warmed up with a free demo so My Floor isn't empty.
@@ -220,6 +229,15 @@ async function main() {
     data: { studentId: arjun.id, type: "SERVICE", amountPaise: 39900, teacherId: teachers.kabir.profileId, serviceId: nightShift.id, createdAt: daysAgo(15) },
   });
   await db.entitlement.create({ data: { userId: arjun.id, serviceId: nightShift.id, teacherId: teachers.kabir.profileId, source: "PURCHASE" } });
+  await db.practiceEvent.create({ data: { userId: arjun.id, serviceId: nightShift.id, lastSec: 32 } });
+  // Arjun also tried Kabir's course last month and canceled, so the Studio shows a canceled subscriber.
+  await db.subscription.create({
+    data: { studentId: arjun.id, teacherId: teachers.kabir.profileId, status: "CANCELED", currentPeriodEnd: daysAgo(5) },
+  });
+  await db.order.create({
+    data: { studentId: arjun.id, type: "SUBSCRIPTION", amountPaise: 49900, teacherId: teachers.kabir.profileId, createdAt: daysAgo(35) },
+  });
+  await db.practiceEvent.create({ data: { userId: arjun.id, serviceId: teachers.kabir.services[3].id, lastSec: 60, completed: true } });
 
   // Two open reports for the admin queue.
   await db.report.create({
@@ -239,7 +257,7 @@ async function main() {
     data: { adminId: admin.id, action: "service.unpublish", detail: "Club Shines Pack — Copyright claim: soundtrack is an unlicensed commercial recording.", createdAt: daysAgo(3) },
   });
 
-  console.log("Seeded: admin, 4 teachers, 12 services, 2 students, 3 orders, 2 open reports.");
+  console.log("Seeded: admin, 4 teachers, 15 services, 2 students, 4 orders, 2 open reports.");
 }
 
 main()

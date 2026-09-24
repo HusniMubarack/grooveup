@@ -4,6 +4,7 @@ import { currentMode, currentUser, isTeacher } from "@/lib/auth";
 import { logoutAction, setModeAction } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/logo";
 
 export async function Header() {
   const user = await currentUser();
@@ -12,8 +13,8 @@ export async function Header() {
   return (
     <header className="sticky top-0 z-30 border-b bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
-        <Link href="/" className="font-serif text-lg tracking-[0.25em] text-primary">
-          ATELIER
+        <Link href="/" aria-label="Groove up home">
+          <Logo size={26} />
         </Link>
         <nav className="hidden items-center gap-4 text-sm text-muted-foreground md:flex">
           <Link href="/explore" className="hover:text-foreground">Explore</Link>

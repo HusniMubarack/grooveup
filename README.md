@@ -1,4 +1,4 @@
-# Atelier — MVP
+# Groove up — MVP
 
 A dance-lesson marketplace for phones: teachers sell lessons, students practice with slow-mo, mirror and section jumps, and a small admin panel lets an operator moderate the demo.
 
@@ -20,7 +20,7 @@ The local database is always the file `prisma/dev.db`. It doesn't read `DATABASE
 Add these to `.env` and run `pnpm dev`. The app then reads and writes the Turso database, the same one Vercel uses:
 
 ```bash
-TURSO_DATABASE_URL="libsql://atelier-<you>.turso.io"
+TURSO_DATABASE_URL="libsql://grooveup-<you>.turso.io"
 TURSO_AUTH_TOKEN="…"
 ```
 
@@ -33,9 +33,9 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
 1. **Create the database.** Install the Turso CLI, then:
    ```bash
    turso auth signup                      # or: turso auth login
-   turso db create atelier
-   turso db show atelier --url            # → TURSO_DATABASE_URL (libsql://…)
-   turso db tokens create atelier         # → TURSO_AUTH_TOKEN
+   turso db create grooveup
+   turso db show grooveup --url            # → TURSO_DATABASE_URL (libsql://…)
+   turso db tokens create grooveup         # → TURSO_AUTH_TOKEN
    ```
    (You can also do this in the Turso web dashboard.)
 2. **Load the schema and demo data** from your machine, once:
@@ -56,13 +56,15 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
 
 | Email | Role | Notes |
 | --- | --- | --- |
-| `teacher@atelier.dev` | TEACHER | Kabir Rao, hip-hop, **verified** |
-| `student@atelier.dev` | STUDENT | Riya, one free demo in progress |
-| `admin@atelier.dev` | ADMIN | the only admin |
-| `arjun@atelier.dev` | STUDENT | follows and subscribes to Ananya, bought one pay-per-view lesson from Min-ji |
-| `ananya@` / `minji@` / `diego@atelier.dev` | TEACHER | Bharatanatyam (**featured**), K-Pop, salsa |
+| `teacher@grooveup.dev` | TEACHER | Kabir Rao, hip-hop, **verified** |
+| `student@grooveup.dev` | STUDENT | Riya, one free demo in progress |
+| `admin@grooveup.dev` | ADMIN | the only admin |
+| `arjun@grooveup.dev` | STUDENT | follows and subscribes to Ananya, bought one pay-per-view lesson from Min-ji |
+| `ananya@` / `minji@` / `diego@grooveup.dev` | TEACHER | Bharatanatyam (**featured**), K-Pop, salsa |
 
-The seed also includes 12 services (free demos, subscription-included and pay-per-view lessons, one featured, one already removed by an admin), 3 paid orders (so GMV is above zero) and 2 open reports.
+The seed also includes 15 lessons across the three categories (one featured, one already removed by an admin), 4 paid orders (so GMV is above zero) and 2 open reports. Arjun has bought, practiced and canceled with Kabir, so `teacher@`'s Studio insights aren't empty.
+
+After login, teachers (and BOTH users, in teacher mode) land on `/studio`, students on `/explore` and the admin on `/admin`.
 
 Sample videos are Google's public `gtv-videos-bucket` MP4s. If they can't load, thumbnails fall back to a gold gradient.
 
@@ -78,6 +80,18 @@ app/admin/actions.ts   admin server actions (every mutation writes AuditLog)
 components/player.tsx  the one player
 components/admin-table.tsx  the one admin table
 ```
+
+## How Explore is organised
+
+`lib/categories.ts` is the single source of truth:
+
+| Category | What it holds | Rule |
+| --- | --- | --- |
+| **Quick Moves** | one move, cheap and quick | STEP or DEMO (free taster), ≤ 90 s |
+| **Full Choreo** | a whole routine in one video | CHOREO, ≤ 20 min |
+| **Courses** | a teacher's full path in their style | the teacher's monthly subscription; its lessons are everything marked "included", incl. SESSION course lessons |
+
+The Studio form enforces the duration limits. The Studio also breaks earnings down by category and lists course subscribers and the students on each lesson (with access type and progress).
 
 ## Rules worth knowing
 

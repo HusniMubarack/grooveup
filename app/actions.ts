@@ -8,9 +8,16 @@ import { redirect } from "next/navigation";
 import type { Level, Role, ServiceType } from "@prisma/client";
 import { currentUser, ensureTeacherProfile, isTeacher, requireTeacher, requireUser, signIn, signOut } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { durationError } from "@/lib/categories";
 import { LEVELS, TYPES } from "@/lib/utils";
 
-export type FormState = { error?: string; ok?: string } | undefined;
+export type FormState = { error?: string; ok?: string; values?: Record<string, string> } | undefined;
+
+/** Error + what the user typed (minus passwords), so the form can refill itself after React resets it. */
+const fail = (f: FormData, error: string): FormState => ({
+  error,
+  values: Object.fromEntries([...f.entries()].filter(([k, v]) => typeof v === "string" && k !== "password" && !k.startsWith("$")) as [string, string][]),
+});
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const safeNext = (n: string) => (n.startsWith("/") && !n.startsWith("//") ? n : "/explore");
@@ -18,12 +25,23 @@ const safeNext = (n: string) => (n.startsWith("/") && !n.startsWith("//") ? n : 
 // ---------- auth ----------
 
 export async function loginAction(_: FormState, f: FormData): Promise<FormState> {
+  const email = str(f, "email").toLowerCase();
+  const next = str(f, "next");
+  // Land by role unless we were sent here from a protected page.
+  let redirectTo = next ? safeNext(next) : "/explore";
+  if (!next) {
+    const u = await db.user.findUnique({ where: { email }, select: { role: true } });
+    if (u?.role === "ADMIN") redirectTo = "/admin";
+    if (u?.role === "TEACHER" || u?.role === "BOTH") redirectTo = "/studio";
+  }
   try {
-    await signIn("credentials", { email: str(f, "email"), password: str(f, "password"), redirectTo: safeNext(str(f, "next")) });
+    await signIn("credentials", { email, password: str(f, "password"), redirectTo });
   } catch (e) {
-    if (e instanceof CredentialsSignin && e.code === "banned") return { error: "This account has been suspended. Contact support." };
-    if (e instanceof AuthError) return { error: "Invalid email or password." };
-    throw e; // NEXT_REDIRECT on success
+    if (e instanceof CredentialsSignin && e.code === "banned") return fail(f, "This account has been suspended. Contact support.");
+    if (e instanceof AuthError) return fail(f, "Invalid email or password.");
+    // Success is a NEXT_REDIRECT; BOTH users start in teacher mode.
+    if (redirectTo === "/studio") (await cookies()).set("grooveup-mode", "teacher", { path: "/", sameSite: "lax" });
+    throw e;
   }
 }
 
@@ -35,25 +53,25 @@ export async function registerAction(_: FormState, f: FormData): Promise<FormSta
   const requested = str(f, "role");
   const role: Role = requested === "TEACHER" || requested === "BOTH" ? requested : "STUDENT";
 
-  if (!name || !email.includes("@") || password.length < 8) return { error: "Name, valid email and 8+ character password required." };
-  if (await db.user.findUnique({ where: { email } })) return { error: "An account with that email already exists." };
+  if (!name || !email.includes("@") || password.length < 8) return fail(f, "Name, valid email and 8+ character password required.");
+  if (await db.user.findUnique({ where: { email } })) return fail(f, "An account with that email already exists.");
 
   const user = await db.user.create({ data: { name, email, role, passwordHash: await bcrypt.hash(password, 10) } });
   if (isTeacher(role)) await ensureTeacherProfile(user.id, name);
-  if (role === "BOTH") (await cookies()).set("atelier-mode", "teacher", { path: "/", sameSite: "lax" });
+  if (role === "BOTH") (await cookies()).set("grooveup-mode", "teacher", { path: "/", sameSite: "lax" });
 
   await signIn("credentials", { email, password, redirectTo: isTeacher(role) ? "/studio" : "/explore" });
 }
 
 export async function logoutAction() {
-  (await cookies()).delete("atelier-mode");
+  (await cookies()).delete("grooveup-mode");
   await signOut({ redirectTo: "/" });
 }
 
 export async function setModeAction(mode: "student" | "teacher") {
   const u = await requireUser();
   if (u.role !== "BOTH") return;
-  (await cookies()).set("atelier-mode", mode, { path: "/", sameSite: "lax" });
+  (await cookies()).set("grooveup-mode", mode, { path: "/", sameSite: "lax" });
   redirect(mode === "teacher" ? "/studio" : "/explore");
 }
 
@@ -160,14 +178,17 @@ export async function createServiceAction(_: FormState, f: FormData): Promise<Fo
   const type = str(f, "type") as ServiceType;
   const level = str(f, "level") as Level;
   const title = str(f, "title");
-  const durationSec = Math.round(Number(str(f, "durationMin")) * 60) || 0;
+  const durationSec = Math.max(0, Math.round((Number(str(f, "durationMin")) || 0) * 60 + (Number(str(f, "durationSec")) || 0)));
   const isFree = f.get("isFree") === "on" || type === "DEMO";
   const pricePaise = isFree ? 0 : Math.round(Number(str(f, "priceRupees")) * 100) || 0;
-  const includedInSub = f.get("includedInSub") === "on";
+  // Course lessons are what a subscription buys.
+  const includedInSub = f.get("includedInSub") === "on" || type === "SESSION";
 
-  if (!title || !TYPES.includes(type) || !LEVELS.includes(level)) return { error: "Title, type and level are required." };
-  if (!str(f, "videoUrl").startsWith("http") || !str(f, "teaserUrl").startsWith("http")) return { error: "Teaser and video URLs must be http(s) links." };
-  if (!isFree && !includedInSub && pricePaise <= 0) return { error: "Paid lessons need a price, or include it in your subscription." };
+  if (!title || !TYPES.includes(type) || !LEVELS.includes(level)) return fail(f, "Title, type and level are required.");
+  const tooLong = durationError(type, durationSec);
+  if (tooLong) return fail(f, tooLong);
+  if (!str(f, "videoUrl").startsWith("http") || !str(f, "teaserUrl").startsWith("http")) return fail(f, "Teaser and video URLs must be http(s) links.");
+  if (!isFree && !includedInSub && pricePaise <= 0) return fail(f, "Paid lessons need a price, or include it in your subscription.");
 
   const sections = [1, 2]
     .map((n) => ({ label: str(f, `s${n}label`), startSec: Number(str(f, `s${n}start`)) || 0, endSec: Number(str(f, `s${n}end`)) || 0 }))

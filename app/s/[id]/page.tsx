@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BadgeCheck, Lock, Play, ShieldAlert } from "lucide-react";
-import { canPlay, isFreeToWatch, isServiceLive } from "@/lib/access";
+import { canPlay, isFreeToWatch, isServiceLive, publicServiceWhere } from "@/lib/access";
+import { CATEGORIES, categoryOf } from "@/lib/categories";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { fmtDuration, rupees } from "@/lib/utils";
+import { fmtDuration, parseStyles, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PayButton } from "@/components/pay-button";
 import { Placeholder } from "@/components/placeholder";
 import { ReportButton } from "@/components/report-button";
+import { ServiceCard } from "@/components/service-card";
 
 export default async function ServicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,7 +34,15 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     );
   }
 
-  const unlocked = await canPlay(user, s);
+  const [unlocked, more] = await Promise.all([
+    canPlay(user, s),
+    db.service.findMany({
+      where: { AND: [publicServiceWhere, { teacherId: s.teacherId, id: { not: s.id } }] },
+      include: { teacher: { include: { user: { select: { name: true } } } } },
+      orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
+      take: 3,
+    }),
+  ]);
   const back = `/s/${s.id}`;
 
   return (
@@ -57,7 +67,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
       <div className="grid gap-6 md:grid-cols-[1fr_280px]">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1">
-            <Badge variant="muted">{s.type}</Badge>
+            <Badge variant="outline">{CATEGORIES[categoryOf(s)].name}</Badge>
             <Badge variant="muted">{s.level}</Badge>
             <Badge variant="muted">{s.style}</Badge>
             <Badge variant="muted">{fmtDuration(s.durationSec)}</Badge>
@@ -91,10 +101,10 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             <>
               {s.pricePaise > 0 && <PayButton kind="SERVICE" id={s.id} amountPaise={s.pricePaise} back={back} label="Buy lesson" />}
               {s.includedInSub && (
-                <PayButton kind="SUBSCRIPTION" id={s.teacherId} amountPaise={s.teacher.monthlyPricePaise} back={back} label={`Subscribe to ${s.teacher.user.name.split(" ")[0]}`} />
+                <PayButton kind="SUBSCRIPTION" id={s.teacherId} amountPaise={s.teacher.monthlyPricePaise} back={back} label={`Join ${s.teacher.user.name.split(" ")[0]}'s course`} />
               )}
               <p className="text-center text-xs text-muted-foreground">
-                {s.includedInSub ? `Included with ${rupees(s.teacher.monthlyPricePaise)}/mo subscription.` : "One-time purchase, yours to keep."}
+                {s.includedInSub ? `Included in the ${rupees(s.teacher.monthlyPricePaise)}/mo course subscription.` : "One-time purchase, yours to keep."}
               </p>
             </>
           )}
@@ -110,6 +120,28 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
           </Placeholder>
         </aside>
       </div>
+
+      <section className="space-y-4 rounded-xl border bg-card p-4">
+        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">About the teacher</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1 text-lg font-semibold">
+              {s.teacher.user.name} {s.teacher.verified && <BadgeCheck className="size-4 text-primary" aria-label="Verified" />}
+            </p>
+            <p className="text-xs text-primary">
+              {parseStyles(s.teacher.styles).join(" · ")} · course {rupees(s.teacher.monthlyPricePaise)}/mo
+            </p>
+            <p className="mt-2 max-w-prose text-sm text-muted-foreground">{s.teacher.bio}</p>
+          </div>
+          <Button asChild variant="outline"><Link href={`/t/${s.teacher.handle}`}>View {s.teacher.user.name.split(" ")[0]}&apos;s profile</Link></Button>
+        </div>
+        {more.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">More from {s.teacher.user.name.split(" ")[0]}</h3>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{more.map((m) => <ServiceCard key={m.id} s={m} />)}</div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
