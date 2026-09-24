@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ChevronDown, Plus, ShieldAlert } from "lucide-react";
+import { ChevronDown, Pencil, Plus, ShieldAlert } from "lucide-react";
 import type { Service } from "@prisma/client";
 import { togglePublishAction } from "@/app/actions";
 import { ensureTeacherProfile, requireTeacher } from "@/lib/auth";
 import { CATEGORIES, CATEGORY_KEYS, type CategoryKey, categoryOf } from "@/lib/categories";
 import { db } from "@/lib/db";
+import { syncMuxVideo } from "@/lib/mux";
 import { fmtDate, fmtDuration, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ type Learner = { id: string; name: string; access: Access; progress: string };
 export default async function Studio() {
   const user = await requireTeacher();
   const profile = await ensureTeacherProfile(user.id, user.name);
-  const [services, orders, subs, followers, purchases, practice] = await Promise.all([
+  const [rawServices, orders, subs, followers, purchases, practice] = await Promise.all([
     db.service.findMany({ where: { teacherId: profile.id }, orderBy: { createdAt: "desc" } }),
     db.order.findMany({ where: { teacherId: profile.id }, include: { service: { select: { type: true, durationSec: true } } } }),
     db.subscription.findMany({ where: { teacherId: profile.id }, include: { student: { select: { id: true, name: true } } }, orderBy: { currentPeriodEnd: "desc" } }),
@@ -29,6 +30,8 @@ export default async function Studio() {
     db.entitlement.findMany({ where: { teacherId: profile.id, source: "PURCHASE" }, include: { user: { select: { id: true, name: true } } } }),
     db.practiceEvent.findMany({ where: { service: { teacherId: profile.id } }, include: { user: { select: { id: true, name: true } } } }),
   ]);
+  // Pick up Mux uploads that finished processing since the last visit.
+  const services = await Promise.all(rawServices.map((s) => syncMuxVideo(s)));
   const removed = services.filter((s) => s.unpublishedByAdmin);
   const activeSubs = subs.filter((s) => s.status === "ACTIVE");
   const earnings = orders.reduce((a, o) => a + o.amountPaise, 0);
@@ -158,15 +161,21 @@ export default async function Studio() {
             <div className="min-w-0 flex-1">
               <Link href={`/s/${s.id}`} className="line-clamp-1 font-medium hover:text-primary">{s.title}</Link>
               <p className="text-xs text-muted-foreground">{categoryOf(s) === "courses" ? "Course lesson" : CATEGORIES[categoryOf(s)].name} · {priceLabel(s)}</p>
-              <div className="mt-1">
+              <div className="mt-1 flex flex-wrap gap-1">
                 {s.unpublishedByAdmin ? <Badge variant="destructive">Removed by admin</Badge> : s.published ? <Badge variant="outline">Published</Badge> : <Badge variant="muted">Draft</Badge>}
+                {s.muxUploadId && s.videoStatus !== "ready" && (
+                  <Badge variant={s.videoStatus === "errored" ? "destructive" : "muted"}>{s.videoStatus === "errored" ? "Video failed" : "Video processing…"}</Badge>
+                )}
               </div>
             </div>
-            <form action={togglePublishAction.bind(null, s.id)}>
-              <Button size="sm" variant="secondary" disabled={s.unpublishedByAdmin} title={s.unpublishedByAdmin ? "Locked until an admin restores it" : undefined}>
-                {s.published ? "Unpublish" : "Publish"}
-              </Button>
-            </form>
+            <div className="flex shrink-0 flex-col gap-1">
+              <Button asChild size="sm" variant="outline"><Link href={`/studio/edit/${s.id}`}><Pencil /> Edit</Link></Button>
+              <form action={togglePublishAction.bind(null, s.id)}>
+                <Button size="sm" variant="secondary" className="w-full" disabled={s.unpublishedByAdmin} title={s.unpublishedByAdmin ? "Locked until an admin restores it" : undefined}>
+                  {s.published ? "Unpublish" : "Publish"}
+                </Button>
+              </form>
+            </div>
           </div>
         ))}
       </section>

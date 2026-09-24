@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PayButton } from "@/components/pay-button";
 import { Placeholder } from "@/components/placeholder";
 import { ReportButton } from "@/components/report-button";
-import { ServiceCard } from "@/components/service-card";
+import { ServiceCard, Thumb, thumbSrc } from "@/components/service-card";
 
 export default async function ServicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -56,7 +56,14 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
 
       <div className="relative overflow-hidden rounded-lg border bg-black">
         {/* Locked or not, this page only ever shows the teaser. */}
-        <video src={s.teaserUrl} poster={s.thumbnailUrl || undefined} controls playsInline className="aspect-video w-full" />
+        {s.teaserUrl ? (
+          <video src={s.teaserUrl} poster={thumbSrc(s) || undefined} controls playsInline className="aspect-video w-full" />
+        ) : s.muxPlaybackId ? (
+          // eslint-disable-next-line @next/next/no-img-element -- signed Mux preview via redirect
+          <img src={`/api/thumb/${s.id}?gif=1`} alt={`Preview of ${s.title}`} className="aspect-video w-full object-cover" />
+        ) : (
+          <Thumb s={s} className="rounded-none" />
+        )}
         {!unlocked && (
           <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-xs text-primary">
             <Lock className="size-3" /> Teaser

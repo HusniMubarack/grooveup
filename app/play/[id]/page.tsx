@@ -4,8 +4,10 @@ import { ArrowLeft } from "lucide-react";
 import { canPlay } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { muxSigningEnabled, signedStreamUrl, syncMuxVideo } from "@/lib/mux";
 import { Placeholder } from "@/components/placeholder";
 import { Player } from "@/components/player";
+import { thumbSrc } from "@/components/service-card";
 
 export default async function PlayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,6 +20,10 @@ export default async function PlayPage({ params }: { params: Promise<{ id: strin
   if (!(await canPlay(user, s))) redirect(`/s/${id}`);
 
   const progress = await db.practiceEvent.findUnique({ where: { userId_serviceId: { userId: user.id, serviceId: id } } });
+  // Access is already checked above; only now is a short-lived signed stream URL minted.
+  const video = await syncMuxVideo(s);
+  const src =
+    video.muxPlaybackId && video.videoStatus === "ready" && muxSigningEnabled() ? await signedStreamUrl(video.muxPlaybackId) : s.videoUrl;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -25,8 +31,8 @@ export default async function PlayPage({ params }: { params: Promise<{ id: strin
       <h1 className="font-serif text-2xl leading-tight">{s.title}</h1>
       <Player
         serviceId={s.id}
-        src={s.videoUrl}
-        poster={s.thumbnailUrl || undefined}
+        src={src}
+        poster={thumbSrc(video) || undefined}
         sections={s.sections}
         startAt={progress && !progress.completed ? progress.lastSec : 0}
       />

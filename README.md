@@ -52,6 +52,24 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
 
    Then deploy. Every push to the production branch redeploys.
 
+## Video hosting (Mux)
+
+Teachers upload lesson videos from the Studio **straight to [Mux](https://www.mux.com)**: the file goes from their browser to Mux in resumable 5 MB chunks and never passes through this app or Vercel. Students stream it through the Groove up player (HLS, adaptive quality) with speed, mirror, sections and A–B loop.
+
+**Security**
+- Videos are created with a **signed-only** playback policy. A stream URL only works with a token that expires after 4 hours.
+- `/play/[id]` checks `canPlay()` first and only then mints the token, so locked lessons never reach the browser.
+- Thumbnails and previews go through `/api/thumb/[id]`, which signs them on the fly.
+- An upload is tagged with its teacher, so another account can't attach someone else's upload.
+- No platform can stop screen recording.
+
+**Setup** (about 5 minutes)
+1. Create a Mux account → Settings → **Access Tokens** → new token with **Mux Video: Read + Write** → `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`.
+2. Settings → **Signing Keys** → create one → `MUX_SIGNING_KEY` (the key ID) and `MUX_PRIVATE_KEY` (the base64 private key, shown only once).
+3. Add all four to `.env` and to Vercel (Settings → Environment Variables), then redeploy.
+
+Without these variables the Upload button is hidden and lessons use pasted MP4 links, which is how the seed data works. Videos are picked up once Mux finishes processing (the Studio shows "Video processing…" until then); no webhook is needed.
+
 ### Seed logins (password `password123`)
 
 | Email | Role | Notes |
@@ -91,7 +109,7 @@ components/admin-table.tsx  the one admin table
 | **Full Choreo** | a whole routine in one video | CHOREO, ≤ 20 min |
 | **Courses** | a teacher's full path in their style | the teacher's monthly subscription; its lessons are everything marked "included", incl. SESSION course lessons |
 
-The Studio form enforces the duration limits. The Studio also breaks earnings down by category and lists course subscribers and the students on each lesson (with access type and progress).
+The Studio form enforces the duration limits. Teachers can edit any lesson (`/studio/edit/[id]`), add up to 8 practice sections, and delete a lesson only while no student has bought it, practiced it or gets it through their subscription; otherwise they unpublish it. The Studio also breaks earnings down by category and lists course subscribers and the students on each lesson (with access type and progress).
 
 ## Rules worth knowing
 

@@ -13,11 +13,16 @@ export function priceLabel(s: Service) {
   return parts.join(" · ");
 }
 
-export function Thumb({ s, className, locked }: { s: Pick<Service, "thumbnailUrl" | "durationSec">; className?: string; locked?: boolean }) {
+type ThumbFields = Pick<Service, "id" | "thumbnailUrl" | "durationSec" | "muxPlaybackId">;
+
+/** Mux lessons get a signed poster via /api/thumb; others use the pasted thumbnail URL. */
+export const thumbSrc = (s: ThumbFields) => (s.muxPlaybackId ? `/api/thumb/${s.id}` : s.thumbnailUrl);
+
+export function Thumb({ s, className, locked }: { s: ThumbFields; className?: string; locked?: boolean }) {
   return (
     <div
       className={cn("relative aspect-video overflow-hidden rounded-md bg-cover bg-center", className)}
-      style={{ backgroundImage: `url(${s.thumbnailUrl}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
+      style={{ backgroundImage: `url(${thumbSrc(s)}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
     >
       {locked && (
         <span className="absolute right-2 top-2 rounded-full bg-black/70 p-1.5 text-primary">
@@ -52,7 +57,7 @@ export function ServiceCard({ s, className }: { s: CardService; className?: stri
 
 export type CourseTeacher = TeacherProfile & {
   user: Pick<User, "name">;
-  services: Pick<Service, "id" | "thumbnailUrl" | "durationSec">[];
+  services: ThumbFields[];
 };
 
 /** A course = a teacher's subscription bundle in their style. */
@@ -64,7 +69,7 @@ export function CourseCard({ t, className }: { t: CourseTeacher; className?: str
     <Link href={`/t/${t.handle}`} className={cn("group block", className)}>
       <div
         className={cn("relative aspect-video overflow-hidden rounded-md bg-cover bg-center", t.featured && "ring-1 ring-primary/70")}
-        style={{ backgroundImage: `linear-gradient(to top, rgba(11,10,9,.9), rgba(11,10,9,.1)), url(${cover?.thumbnailUrl ?? ""}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
+        style={{ backgroundImage: `linear-gradient(to top, rgba(11,10,9,.9), rgba(11,10,9,.1)), url(${cover ? thumbSrc(cover) : ""}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
       >
         <span className="absolute bottom-2 left-2 text-xs text-primary">{t.services.length} lessons</span>
       </div>

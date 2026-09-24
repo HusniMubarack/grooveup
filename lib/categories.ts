@@ -24,6 +24,8 @@ export type CategoryKey = keyof typeof CATEGORIES;
 export const CATEGORY_KEYS = Object.keys(CATEGORIES) as CategoryKey[];
 
 export const MOVE_MAX_SEC = 90;
+/** Practice/loop points a teacher can mark on one lesson. */
+export const MAX_SECTIONS = 8;
 export const CHOREO_MAX_SEC = 20 * 60;
 
 /** Labels for the Studio form; the enum stays STEP / CHOREO / SESSION / DEMO. */
@@ -69,7 +71,7 @@ export async function findCourses(style?: string) {
     },
     include: {
       user: { select: { name: true } },
-      services: { where: lessons, select: { id: true, thumbnailUrl: true, durationSec: true }, orderBy: { createdAt: "asc" } },
+      services: { where: lessons, select: { id: true, thumbnailUrl: true, durationSec: true, muxPlaybackId: true }, orderBy: { createdAt: "asc" } },
     },
     orderBy: [{ featured: "desc" }, { verified: "desc" }],
   });

@@ -119,6 +119,11 @@ model Service {
   unpublishedByAdmin Boolean        @default(false)
   unpublishedReason  String?
   createdAt          DateTime       @default(now())
+  /// Mux-hosted video (optional; videoUrl is used when these are empty)
+  muxUploadId        String?
+  muxAssetId         String?
+  muxPlaybackId      String?
+  videoStatus        String?        /// processing | ready | errored
 
   sections       ServiceSection[]
   entitlements   Entitlement[]

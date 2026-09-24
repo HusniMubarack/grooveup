@@ -3,12 +3,14 @@
 import bcrypt from "bcryptjs";
 import { AuthError, CredentialsSignin } from "next-auth";
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import type { Level, Role, ServiceType } from "@prisma/client";
+import type { Level, Prisma, Role, ServiceType } from "@prisma/client";
 import { currentUser, ensureTeacherProfile, isTeacher, requireTeacher, requireUser, signIn, signOut } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { durationError } from "@/lib/categories";
+import { durationError, MAX_SECTIONS } from "@/lib/categories";
+import { deleteBlocker } from "@/lib/lessons";
+import { createDirectUpload, deleteMuxAsset, muxEnabled, muxUploadBelongsTo } from "@/lib/mux";
 import { LEVELS, TYPES } from "@/lib/utils";
 
 export type FormState = { error?: string; ok?: string; values?: Record<string, string> } | undefined;
@@ -171,10 +173,12 @@ export async function reportAction(_: FormState, f: FormData): Promise<FormState
 
 // ---------- teacher ----------
 
-export async function createServiceAction(_: FormState, f: FormData): Promise<FormState> {
-  const u = await requireTeacher();
-  const profile = await ensureTeacherProfile(u.id, u.name);
+type ServiceInput = Omit<Prisma.ServiceUncheckedCreateInput, "teacherId" | "sections"> & {
+  sections: { label: string; startSec: number; endSec: number }[];
+};
 
+/** Shared by create and update so the rules can't drift apart. Returns the data or an error message. */
+async function parseServiceForm(f: FormData, teacherId: string, existing?: { muxUploadId: string | null }): Promise<ServiceInput | string> {
   const type = str(f, "type") as ServiceType;
   const level = str(f, "level") as Level;
   const title = str(f, "title");
@@ -183,47 +187,120 @@ export async function createServiceAction(_: FormState, f: FormData): Promise<Fo
   const pricePaise = isFree ? 0 : Math.round(Number(str(f, "priceRupees")) * 100) || 0;
   // Course lessons are what a subscription buys.
   const includedInSub = f.get("includedInSub") === "on" || type === "SESSION";
+  const muxUploadId = str(f, "muxUploadId") || null;
+  const newUpload = muxUploadId && muxUploadId !== existing?.muxUploadId;
+  const videoUrl = str(f, "videoUrl");
+  const teaserUrl = str(f, "teaserUrl");
+  const isUrl = (u: string) => /^https?:\/\//.test(u);
 
-  if (!title || !TYPES.includes(type) || !LEVELS.includes(level)) return fail(f, "Title, type and level are required.");
+  if (!title || !TYPES.includes(type) || !LEVELS.includes(level)) return "Title, type and level are required.";
   const tooLong = durationError(type, durationSec);
-  if (tooLong) return fail(f, tooLong);
-  if (!str(f, "videoUrl").startsWith("http") || !str(f, "teaserUrl").startsWith("http")) return fail(f, "Teaser and video URLs must be http(s) links.");
-  if (!isFree && !includedInSub && pricePaise <= 0) return fail(f, "Paid lessons need a price, or include it in your subscription.");
+  if (tooLong) return tooLong;
+  if (!muxUploadId && !isUrl(videoUrl)) return "Upload a video or paste an http(s) video link.";
+  if ((videoUrl && !isUrl(videoUrl)) || (teaserUrl && !isUrl(teaserUrl))) return "Video and teaser links must start with http(s)://";
+  if (!isFree && !includedInSub && pricePaise <= 0) return "Paid lessons need a price, or include it in your course subscription.";
+  // Upload ids come from the browser: make sure this teacher created it.
+  if (newUpload && !(await muxUploadBelongsTo(muxUploadId, teacherId))) return "That video upload doesn't belong to you. Upload it again.";
 
-  const sections = [1, 2]
+  const sections = Array.from({ length: MAX_SECTIONS }, (_, i) => i + 1)
     .map((n) => ({ label: str(f, `s${n}label`), startSec: Number(str(f, `s${n}start`)) || 0, endSec: Number(str(f, `s${n}end`)) || 0 }))
-    .filter((s) => s.label);
+    .filter((sec) => sec.label);
+  if (sections.some((sec) => sec.endSec <= sec.startSec)) return "Each section must end after it starts.";
 
-  await db.service.create({
-    data: {
-      teacherId: profile.id,
-      title,
-      type,
-      level,
-      style: str(f, "style") || "Hip-Hop",
-      description: str(f, "description"),
-      durationSec,
-      teaserUrl: str(f, "teaserUrl"),
-      videoUrl: str(f, "videoUrl"),
-      thumbnailUrl: str(f, "thumbnailUrl"),
-      pricePaise,
-      includedInSub,
-      isFree,
-      published: f.get("published") === "on",
-      sections: { create: sections },
-    },
-  });
+  return {
+    title,
+    type,
+    level,
+    style: str(f, "style") || "Hip-Hop",
+    description: str(f, "description"),
+    durationSec,
+    teaserUrl,
+    videoUrl,
+    thumbnailUrl: str(f, "thumbnailUrl"),
+    pricePaise,
+    includedInSub,
+    isFree,
+    published: f.get("published") === "on",
+    ...(newUpload ? { muxUploadId, muxAssetId: null, muxPlaybackId: null, videoStatus: "processing" } : {}),
+    sections,
+  };
+}
+
+/** Keep SUBSCRIPTION entitlements (used for My Floor) in step with includedInSub. Access itself is computed live. */
+async function syncSubEntitlements(serviceId: string, teacherId: string, included: boolean) {
+  await db.entitlement.deleteMany({ where: { serviceId, source: "SUBSCRIPTION" } });
+  if (!included) return;
+  const subs = await db.subscription.findMany({ where: { teacherId, status: "ACTIVE" } });
+  if (subs.length)
+    await db.entitlement.createMany({
+      data: subs.map((sub) => ({ userId: sub.studentId, serviceId, teacherId, source: "SUBSCRIPTION" as const })),
+    });
+}
+
+/** The teacher's own lesson, or null. */
+async function ownService(id: string) {
+  const u = await requireTeacher();
+  const s = await db.service.findUnique({ where: { id }, include: { teacher: true } });
+  return s && s.teacher.userId === u.id ? s : null;
+}
+
+export async function createServiceAction(_: FormState, f: FormData): Promise<FormState> {
+  const u = await requireTeacher();
+  const profile = await ensureTeacherProfile(u.id, u.name);
+  const data = await parseServiceForm(f, profile.id);
+  if (typeof data === "string") return fail(f, data);
+
+  const { sections, ...fields } = data;
+  const created = await db.service.create({ data: { ...fields, teacherId: profile.id, sections: { create: sections } } });
   // Existing subscribers get the new included lesson on their floor.
-  if (includedInSub) {
-    const created = await db.service.findFirst({ where: { teacherId: profile.id }, orderBy: { createdAt: "desc" } });
-    const subs = await db.subscription.findMany({ where: { teacherId: profile.id, status: "ACTIVE" } });
-    if (created && subs.length)
-      await db.entitlement.createMany({
-        data: subs.map((s) => ({ userId: s.studentId, serviceId: created.id, teacherId: profile.id, source: "SUBSCRIPTION" as const })),
-      });
-  }
+  if (created.includedInSub) await syncSubEntitlements(created.id, profile.id, true);
   revalidatePath("/", "layout");
   redirect("/studio");
+}
+
+export async function updateServiceAction(id: string, _: FormState, f: FormData): Promise<FormState> {
+  const s = await ownService(id);
+  if (!s) redirect("/studio");
+  const data = await parseServiceForm(f, s.teacherId, s);
+  if (typeof data === "string") return fail(f, data);
+
+  const { sections, ...fields } = data;
+  // An admin removal stays in force until an admin restores the lesson.
+  if (s.unpublishedByAdmin) fields.published = false;
+  await db.$transaction([
+    db.serviceSection.deleteMany({ where: { serviceId: id } }),
+    db.service.update({ where: { id }, data: { ...fields, sections: { create: sections } } }),
+  ]);
+  if (fields.muxUploadId && s.muxAssetId) await deleteMuxAsset(s.muxAssetId); // replaced video
+  if (fields.includedInSub !== s.includedInSub) await syncSubEntitlements(id, s.teacherId, !!fields.includedInSub);
+  revalidatePath("/", "layout");
+  redirect("/studio");
+}
+
+export async function deleteServiceAction(id: string): Promise<FormState> {
+  const s = await ownService(id);
+  if (!s) return { error: "Lesson not found." };
+  const blocker = await deleteBlocker(s);
+  if (blocker) return { error: blocker };
+  await db.service.delete({ where: { id } });
+  await deleteMuxAsset(s.muxAssetId);
+  revalidatePath("/", "layout");
+  redirect("/studio");
+}
+
+/** Starts a direct browser → Mux upload for the signed-in teacher. */
+export async function createMuxUploadAction(): Promise<{ id: string; url: string } | { error: string }> {
+  const u = await requireTeacher();
+  if (!muxEnabled()) return { error: "Video uploads aren't configured on this server." };
+  const profile = await ensureTeacherProfile(u.id, u.name);
+  const h = await headers();
+  const origin = h.get("origin") ?? `https://${h.get("host")}`;
+  try {
+    return await createDirectUpload(origin, profile.id);
+  } catch (e) {
+    console.error(e);
+    return { error: "Couldn't start the upload. Try again." };
+  }
 }
 
 export async function togglePublishAction(serviceId: string) {
