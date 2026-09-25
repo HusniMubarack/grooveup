@@ -33,3 +33,19 @@ export function parseStyles(json: string): string[] {
 export const STYLES = ["Hip-Hop", "Bharatanatyam", "K-Pop", "Salsa", "Contemporary", "Bollywood"];
 export const LEVELS = ["BEGINNER", "INTERMEDIATE", "ADVANCED"] as const;
 export const TYPES = ["STEP", "CHOREO", "SESSION", "DEMO"] as const;
+
+/** Access end date, or "no expiry" when null. */
+export function fmtUntil(d: Date | null | undefined) {
+  return d ? fmtDate(d) : "no expiry";
+}
+
+export function timeAgo(d: Date) {
+  const s = Math.max(1, Math.round((Date.now() - d.getTime()) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const days = Math.round(h / 24);
+  return days < 30 ? `${days} d ago` : fmtDate(d);
+}

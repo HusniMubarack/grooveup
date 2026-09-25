@@ -19,6 +19,18 @@ export function isFreeToWatch(s: Pick<Service, "isFree" | "type">) {
   return s.isFree || s.type === "DEMO";
 }
 
+/** A subscription that currently grants access (null period end = never expires). */
+export const activeSubWhere = (): Prisma.SubscriptionWhereInput => ({
+  status: "ACTIVE",
+  OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: new Date() } }],
+});
+
+/** A purchase/free grant that hasn't expired. */
+export const liveGrantWhere = (): Prisma.EntitlementWhereInput => ({
+  source: { in: ["PURCHASE", "FREE"] },
+  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+});
+
 /** Server-side play rule. Admins and the owner may always preview. */
 export async function canPlay(user: SessionUser | null, s: ServiceWithTeacher): Promise<boolean> {
   if (user?.role === "ADMIN") return true;
@@ -28,13 +40,13 @@ export async function canPlay(user: SessionUser | null, s: ServiceWithTeacher): 
   if (!user) return false;
 
   const bought = await db.entitlement.findFirst({
-    where: { userId: user.id, serviceId: s.id, source: { in: ["PURCHASE", "FREE"] } },
+    where: { userId: user.id, serviceId: s.id, ...liveGrantWhere() },
   });
   if (bought) return true;
 
   if (s.includedInSub) {
     const sub = await db.subscription.findFirst({
-      where: { studentId: user.id, teacherId: s.teacherId, status: "ACTIVE", currentPeriodEnd: { gt: new Date() } },
+      where: { studentId: user.id, teacherId: s.teacherId, ...activeSubWhere() },
     });
     if (sub) return true;
   }

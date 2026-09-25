@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { fmtDate, rupees } from "@/lib/utils";
+import { fmtDate, fmtUntil, rupees } from "@/lib/utils";
 import { cancelSubscriptionAction } from "@/app/admin/actions";
 import { ActionButton, AdminTable } from "@/components/admin-table";
 
@@ -22,6 +22,7 @@ export default async function AdminCommerce() {
             { h: "Date", cell: (o) => fmtDate(o.createdAt), className: "whitespace-nowrap" },
             { h: "Student", cell: (o) => o.student.email },
             { h: "Type", cell: (o) => o.type },
+            { h: "Paid via", cell: (o) => (o.method === "UPI" ? "UPI (teacher-approved)" : "Mock checkout") },
             { h: "Amount", cell: (o) => rupees(o.amountPaise) },
             {
               h: "Teacher / service",
@@ -53,7 +54,7 @@ export default async function AdminCommerce() {
             { h: "Student", cell: (s) => s.student.email },
             { h: "Teacher", cell: (s) => <Link href={`/t/${s.teacher.handle}`} className="text-primary">{s.teacher.user.name}</Link> },
             { h: "Price", cell: (s) => `${rupees(s.teacher.monthlyPricePaise)}/mo` },
-            { h: "Period end", cell: (s) => fmtDate(s.currentPeriodEnd) },
+            { h: "Access until", cell: (s) => fmtUntil(s.currentPeriodEnd) },
             { h: "", cell: (s) => <ActionButton action={cancelSubscriptionAction} fields={{ subId: s.id }} variant="destructive">Cancel</ActionButton> },
           ]}
         />

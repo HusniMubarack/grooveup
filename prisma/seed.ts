@@ -141,6 +141,9 @@ async function main() {
   }
 
   // Wipe in dependency order so the seed is re-runnable.
+  await db.message.deleteMany();
+  await db.conversation.deleteMany();
+  await db.accessRequest.deleteMany();
   await db.auditLog.deleteMany();
   await db.report.deleteMany();
   await db.practiceEvent.deleteMany();
@@ -170,6 +173,8 @@ async function main() {
           create: {
             handle: t.handle, bio: t.bio, styles: JSON.stringify([t.style]),
             monthlyPricePaise: t.price, verified: !!t.verified, featured: !!t.featured,
+            // Clearly fake demo VPA; teachers set their real one in Studio → Requests → Payment details.
+            upiId: `${t.handle}@demo-upi`,
           },
         },
       },
@@ -257,7 +262,35 @@ async function main() {
     data: { adminId: admin.id, action: "service.unpublish", detail: "Club Shines Pack — Copyright claim: soundtrack is an unlicensed commercial recording.", createdAt: daysAgo(3) },
   });
 
-  console.log("Seeded: admin, 4 teachers, 15 services, 2 students, 4 orders, 2 open reports.");
+  // Access requests (paid outside the app by UPI) and chats.
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60000);
+  await db.accessRequest.create({
+    data: { studentId: student.id, teacherId: teachers.kabir.profileId, amountPaise: 49900, paymentRef: "4321 8765 1234", note: "Paid on GPay just now", createdAt: minutesAgo(90) },
+  });
+  const cbl = teachers.diego.services[1];
+  await db.accessRequest.create({
+    data: { studentId: arjun.id, teacherId: teachers.diego.profileId, serviceId: cbl.id, amountPaise: 14900, paymentRef: "UPI 9988 7766", createdAt: minutesAgo(300) },
+  });
+  const chat = async (studentId: string, teacherId: string, lines: [string | null, string, number][], teacherRead: boolean) => {
+    const c = await db.conversation.create({ data: { studentId, teacherId } });
+    for (const [sender, body, ago] of lines) await db.message.create({ data: { conversationId: c.id, senderId: sender, body, createdAt: minutesAgo(ago) } });
+    const last = minutesAgo(Math.min(...lines.map((l) => l[2])));
+    await db.conversation.update({ where: { id: c.id }, data: { lastMessageAt: last, studentReadAt: last, teacherReadAt: teacherRead ? last : minutesAgo(10000) } });
+  };
+  await chat(student.id, teachers.kabir.profileId, [
+    [null, "Access requested for the course · ₹499 · UPI ref 4321 8765 1234\n“Paid on GPay just now”", 90],
+    [student.id, "Hi Kabir! Just paid for the course. Total beginner, is that okay?", 89],
+  ], false);
+  await chat(arjun.id, teachers.ananya.profileId, [
+    [arjun.id, "Namaste! Is the Alarippu lesson okay for someone with 6 months of practice?", 3000],
+    [teachers.ananya.userId, "Yes, perfect level. Start with the Tatta Adavu demo as a warm-up.", 2900],
+    [arjun.id, "Thank you, subscribing now 🙏", 2890],
+  ], true);
+  await chat(arjun.id, teachers.diego.profileId, [
+    [null, "Access requested for “Cross-Body Lead Variations” · ₹149 · UPI ref UPI 9988 7766", 300],
+  ], false);
+
+  console.log("Seeded: admin, 4 teachers, 15 services, 2 students, 4 orders, 2 open reports, 2 pending requests, 3 chats.");
 }
 
 main()

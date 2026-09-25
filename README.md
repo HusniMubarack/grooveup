@@ -55,6 +55,18 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
    **Migrations run automatically on every Vercel build** (`vercel-build` → `prisma/migrate.ts`): new columns are added to Turso before the new code goes live, existing data is kept, and if a migration fails the build fails and the previous deployment stays up. Run `pnpm db:migrate` to do the same by hand. `pnpm prisma db seed` is only for (re)loading the demo data, and it wipes the database.
 4. **Check the deployment:** sign in as `admin@grooveup.dev`. The **Setup** card on `/admin` shows the database, whether migrations are up to date, and whether Mux uploads and signed playback are configured (it only shows whether each is set, never the values).
 
+## Access requests & chat (payments outside the app)
+
+Until a payment gateway is added, students pay teachers directly by UPI:
+
+1. On a course or paid lesson the student taps **Request access**. They see the teacher's UPI ID, an optional QR code (generated on the fly from a `upi://pay` link with the amount filled in; nothing is uploaded) and **Open UPI app** on phones. They can add their UPI transaction ID and a note.
+2. The teacher sees it in **Studio → Requests** (searchable by student, lesson or UPI reference) and approves it, choosing how long access lasts: no expiry, 1–3 months or a custom number of days. Or they decline it with an optional reason. Approving records a `UPI` order, so earnings stay accurate. Teachers can end access early.
+3. Every request, approval and decline also appears as a note in that student and teacher's chat.
+
+**Chat:** students message any teacher from the teacher's page or a lesson page. Teachers reply in **Studio → Inbox** (searchable by name or message text, with an Unread filter). Students find their conversations in **My Floor → Inbox** and their requests in **My Floor → Requests**. New messages arrive by polling every 4 s while the chat is open, so no websockets are needed on Vercel.
+
+Teachers set their UPI ID, QR visibility and monthly course price in **Studio → Requests → Payment details**.
+
 ## Deployments (branches, previews, production)
 
 - **`main` is production.** Vercel → Settings → Git → Production Branch = `main`. A merge into `main` deploys the live site.
@@ -101,9 +113,9 @@ Without these variables the Upload button is hidden and lessons use pasted MP4 l
 | Email | Role | Notes |
 | --- | --- | --- |
 | `teacher@grooveup.dev` | TEACHER | Kabir Rao, hip-hop, **verified** |
-| `student@grooveup.dev` | STUDENT | Riya, one free demo in progress |
+| `student@grooveup.dev` | STUDENT | Riya: one free demo in progress, a pending request for Kabir's course and a chat with him |
 | `admin@grooveup.dev` | ADMIN | the only admin |
-| `arjun@grooveup.dev` | STUDENT | follows and subscribes to Ananya, bought one pay-per-view lesson from Min-ji |
+| `arjun@grooveup.dev` | STUDENT | in Ananya's course, bought one lesson from Min-ji, has a pending request for Diego's lesson and two chats |
 | `ananya@` / `minji@` / `diego@grooveup.dev` | TEACHER | Bharatanatyam (**featured**), K-Pop, salsa |
 
 The seed also includes 15 lessons across the three categories (one featured, one already removed by an admin), 4 paid orders (so GMV is above zero) and 2 open reports. Arjun has bought, practiced and canceled with Kabir, so `teacher@`'s Studio insights aren't empty.

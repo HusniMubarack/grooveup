@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BadgeCheck, Lock, Play, ShieldAlert } from "lucide-react";
+import { BadgeCheck, Lock, MessageCircle, Play, ShieldAlert } from "lucide-react";
 import { canPlay, isFreeToWatch, isServiceLive, publicServiceWhere } from "@/lib/access";
 import { CATEGORIES, categoryOf } from "@/lib/categories";
 import { currentUser } from "@/lib/auth";
@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
 import { fmtDuration, parseStyles, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PayButton } from "@/components/pay-button";
+import { RequestAccess } from "@/components/request-access";
+import { requestPanel } from "@/lib/request-panel";
+import { startChatAction } from "@/app/chat-actions";
 import { Placeholder } from "@/components/placeholder";
 import { ReportButton } from "@/components/report-button";
 import { ServiceCard, Thumb, thumbSrc } from "@/components/service-card";
@@ -44,6 +46,14 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     }),
   ]);
   const back = `/s/${s.id}`;
+  // Request panels (only for signed-in students without access).
+  const needsRequest = !!user && !unlocked && !isOwner && !isAdmin;
+  const [lessonReq, courseReq] = needsRequest
+    ? await Promise.all([
+        s.pricePaise > 0 ? requestPanel(user!.id, s.teacher, s.teacher.user.name, s.id, s.pricePaise, s.title) : null,
+        s.includedInSub ? requestPanel(user!.id, s.teacher, s.teacher.user.name, null, s.teacher.monthlyPricePaise, `${s.style} course`) : null,
+      ])
+    : [null, null];
 
   return (
     <div className="space-y-6">
@@ -106,21 +116,34 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             <Button asChild size="lg" className="w-full"><Link href={`/login?next=${back}`}>Sign in to unlock</Link></Button>
           ) : (
             <>
-              {s.pricePaise > 0 && <PayButton kind="SERVICE" id={s.id} amountPaise={s.pricePaise} back={back} label="Buy lesson" />}
-              {s.includedInSub && (
-                <PayButton kind="SUBSCRIPTION" id={s.teacherId} amountPaise={s.teacher.monthlyPricePaise} back={back} label={`Join ${s.teacher.user.name.split(" ")[0]}'s course`} />
+              {s.pricePaise > 0 && lessonReq && (
+                <RequestAccess
+                  teacherId={s.teacherId} teacherName={s.teacher.user.name} serviceId={s.id} amountPaise={s.pricePaise}
+                  label="Request this lesson" upi={lessonReq.upi} pending={lessonReq.pending}
+                />
+              )}
+              {s.includedInSub && courseReq && (
+                <RequestAccess
+                  teacherId={s.teacherId} teacherName={s.teacher.user.name} amountPaise={s.teacher.monthlyPricePaise}
+                  label={`Join ${s.teacher.user.name.split(" ")[0]}'s course`} upi={courseReq.upi} pending={courseReq.pending}
+                />
               )}
               <p className="text-center text-xs text-muted-foreground">
-                {s.includedInSub ? `Included in the ${rupees(s.teacher.monthlyPricePaise)}/mo course subscription.` : "One-time purchase, yours to keep."}
+                {s.includedInSub ? `Included in the ${rupees(s.teacher.monthlyPricePaise)}/mo course.` : "One lesson, unlocked by the teacher after payment."}
               </p>
             </>
+          )}
+          {user && !isOwner && !isAdmin && (
+            <form action={startChatAction.bind(null, s.teacherId)}>
+              <Button variant="ghost" size="sm" className="w-full"><MessageCircle /> Message {s.teacher.user.name.split(" ")[0]}</Button>
+            </form>
           )}
           {(isOwner || isAdmin) && (
             <p className="text-center text-xs text-muted-foreground">{isAdmin ? "Admin preview access" : "You own this lesson"}</p>
           )}
-          <Placeholder title="Real payments">
-            A PaymentProvider interface: Razorpay first (UPI, cards), then Stripe for international. Platform keeps a 10%
-            fee and teachers get scheduled payouts. Today this is a mock charge.
+          <Placeholder title="In-app payments">
+            A payment gateway (Razorpay first, then Stripe) will replace paying the teacher directly, with automatic unlocks,
+            a 10% platform fee and scheduled payouts. Today students pay by UPI and the teacher approves the request.
           </Placeholder>
           <Placeholder title="Tips & promo codes" action="Apply code">
             Students can tip a teacher after a lesson and apply teacher-issued promo codes at checkout.

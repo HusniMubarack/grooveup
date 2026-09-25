@@ -6,7 +6,8 @@ import { ensureTeacherProfile, requireTeacher } from "@/lib/auth";
 import { CATEGORIES, CATEGORY_KEYS, type CategoryKey, categoryOf } from "@/lib/categories";
 import { db } from "@/lib/db";
 import { syncMuxVideo } from "@/lib/mux";
-import { fmtDate, fmtDuration, rupees } from "@/lib/utils";
+import { fmtDuration, fmtUntil, rupees } from "@/lib/utils";
+import { endAccessAction } from "@/app/request-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +34,8 @@ export default async function Studio() {
   // Pick up Mux uploads that finished processing since the last visit.
   const services = await Promise.all(rawServices.map((s) => syncMuxVideo(s)));
   const removed = services.filter((s) => s.unpublishedByAdmin);
-  const activeSubs = subs.filter((s) => s.status === "ACTIVE");
+  const isLive = (s: { status: string; currentPeriodEnd: Date | null }) => s.status === "ACTIVE" && (!s.currentPeriodEnd || s.currentPeriodEnd > new Date());
+  const activeSubs = subs.filter(isLive);
   const earnings = orders.reduce((a, o) => a + o.amountPaise, 0);
 
   // Earnings by category: SERVICE orders by their lesson's category, SUBSCRIPTION orders are the course.
@@ -106,15 +108,25 @@ export default async function Studio() {
 
       <section className="space-y-2">
         <h2 className="text-sm uppercase tracking-wide text-muted-foreground">
-          Course subscribers · {activeSubs.length} active, {subs.length - activeSubs.length} canceled
+          Course subscribers · {activeSubs.length} active, {subs.length - activeSubs.length} ended
         </h2>
         <AdminTable
           rows={subs}
           empty="No subscribers yet. Share your profile link to get your first."
           columns={[
             { h: "Student", cell: (s) => s.student.name },
-            { h: "Status", cell: (s) => <Badge variant={s.status === "ACTIVE" ? "outline" : "muted"}>{s.status.toLowerCase()}</Badge> },
-            { h: "Period end", cell: (s) => fmtDate(s.currentPeriodEnd), className: "whitespace-nowrap" },
+            { h: "Status", cell: (s) => <Badge variant={isLive(s) ? "outline" : "muted"}>{isLive(s) ? "active" : s.status === "ACTIVE" ? "expired" : "ended"}</Badge> },
+            { h: "Access until", cell: (s) => (isLive(s) ? fmtUntil(s.currentPeriodEnd) : "—"), className: "whitespace-nowrap" },
+            {
+              h: "",
+              cell: (s) =>
+                isLive(s) ? (
+                  <form action={endAccessAction}>
+                    <input type="hidden" name="subId" value={s.id} />
+                    <button className="h-7 rounded bg-secondary px-2 text-[11px] hover:bg-destructive hover:text-white">End access</button>
+                  </form>
+                ) : null,
+            },
           ]}
         />
       </section>

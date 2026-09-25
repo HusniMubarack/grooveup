@@ -87,46 +87,6 @@ export async function toggleFollowAction(teacherId: string, handle: string) {
   revalidatePath(`/t/${handle}`);
 }
 
-/** The one mock payment action. kind=SUBSCRIPTION (id = teacherProfileId) or SERVICE (id = serviceId). */
-export async function payAction(f: FormData) {
-  const kind = str(f, "kind");
-  const id = str(f, "id");
-  const back = safeNext(str(f, "back"));
-  const u = await requireUser(back);
-
-  if (kind === "SUBSCRIPTION") {
-    const teacher = await db.teacherProfile.findUnique({
-      where: { id },
-      include: { user: true, services: { where: { includedInSub: true } } },
-    });
-    if (!teacher || teacher.user.banned || teacher.userId === u.id) redirect(back);
-    const periodEnd = new Date(Date.now() + 30 * 86400000);
-    const existing = await db.subscription.findFirst({ where: { studentId: u.id, teacherId: id } });
-    await db.$transaction([
-      existing
-        ? db.subscription.update({ where: { id: existing.id }, data: { status: "ACTIVE", currentPeriodEnd: periodEnd } })
-        : db.subscription.create({ data: { studentId: u.id, teacherId: id, status: "ACTIVE", currentPeriodEnd: periodEnd } }),
-      db.order.create({ data: { studentId: u.id, type: "SUBSCRIPTION", amountPaise: teacher.monthlyPricePaise, teacherId: id } }),
-      db.entitlement.deleteMany({ where: { userId: u.id, teacherId: id, source: "SUBSCRIPTION" } }),
-      db.entitlement.createMany({
-        data: teacher.services.map((s) => ({ userId: u.id, serviceId: s.id, teacherId: id, source: "SUBSCRIPTION" as const })),
-      }),
-    ]);
-  } else if (kind === "SERVICE") {
-    const s = await db.service.findUnique({ where: { id }, include: { teacher: { include: { user: true } } } });
-    if (!s || !s.published || s.unpublishedByAdmin || s.teacher.user.banned || s.pricePaise <= 0) redirect(back);
-    const owned = await db.entitlement.findFirst({ where: { userId: u.id, serviceId: id, source: "PURCHASE" } });
-    if (!owned) {
-      await db.$transaction([
-        db.order.create({ data: { studentId: u.id, type: "SERVICE", amountPaise: s.pricePaise, teacherId: s.teacherId, serviceId: id } }),
-        db.entitlement.create({ data: { userId: u.id, serviceId: id, teacherId: s.teacherId, source: "PURCHASE" } }),
-      ]);
-    }
-  }
-  revalidatePath("/", "layout");
-  redirect(back);
-}
-
 export async function cancelSubAction(subId: string) {
   const u = await requireUser("/me");
   const sub = await db.subscription.findUnique({ where: { id: subId } });

@@ -3,7 +3,8 @@ import { CheckCircle2 } from "lucide-react";
 import { cancelSubAction, logoutAction } from "@/app/actions";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { fmtDate, fmtDuration, rupees } from "@/lib/utils";
+import { liveGrantWhere } from "@/lib/access";
+import { fmtDuration, fmtUntil, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,14 +15,13 @@ export default async function MyFloor() {
   const user = await requireUser("/me");
   const [practice, purchases, subs, follows] = await Promise.all([
     db.practiceEvent.findMany({ where: { userId: user.id }, include: { service: true }, orderBy: { updatedAt: "desc" }, take: 8 }),
-    db.entitlement.findMany({ where: { userId: user.id, source: "PURCHASE" }, include: { service: { include: { teacher: { include: { user: true } } } } } }),
+    db.entitlement.findMany({ where: { userId: user.id, ...liveGrantWhere(), serviceId: { not: null } }, include: { service: { include: { teacher: { include: { user: true } } } } } }),
     db.subscription.findMany({ where: { studentId: user.id }, include: { teacher: { include: { user: true, services: { where: { includedInSub: true, published: true, unpublishedByAdmin: false } } } } }, orderBy: { status: "asc" } }),
     db.follow.findMany({ where: { studentId: user.id }, include: { teacher: { include: { user: true } } } }),
   ]);
 
   return (
     <div className="space-y-8">
-      <h1 className="font-serif text-3xl">My Floor</h1>
 
       <section>
         <h2 className="mb-2 text-sm uppercase tracking-wide text-muted-foreground">Keep practicing</h2>
@@ -43,24 +43,26 @@ export default async function MyFloor() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm uppercase tracking-wide text-muted-foreground">Subscriptions</h2>
-        {subs.length === 0 && <p className="text-sm text-muted-foreground">No subscriptions yet.</p>}
-        {subs.map((s) => (
+        <h2 className="text-sm uppercase tracking-wide text-muted-foreground">Courses</h2>
+        {subs.length === 0 && <p className="text-sm text-muted-foreground">Not in any course yet. Join one from a teacher&apos;s page.</p>}
+        {subs.map((s) => {
+          const live = s.status === "ACTIVE" && (!s.currentPeriodEnd || s.currentPeriodEnd > new Date());
+          return (
           <Card key={s.id}>
             <CardHeader className="flex-row items-center justify-between">
               <div>
                 <CardTitle><Link href={`/t/${s.teacher.handle}`}>{s.teacher.user.name}</Link></CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  {rupees(s.teacher.monthlyPricePaise)}/mo · {s.status === "ACTIVE" ? `renews ${fmtDate(s.currentPeriodEnd)}` : "canceled"}
+                  {rupees(s.teacher.monthlyPricePaise)}/mo · {live ? (s.currentPeriodEnd ? `access until ${fmtUntil(s.currentPeriodEnd)}` : "no expiry") : s.status === "ACTIVE" ? "expired" : "ended"}
                 </p>
               </div>
-              {s.status === "ACTIVE" ? (
-                <form action={cancelSubAction.bind(null, s.id)}><Button size="sm" variant="outline">Cancel</Button></form>
+              {live ? (
+                <form action={cancelSubAction.bind(null, s.id)}><Button size="sm" variant="outline">Leave</Button></form>
               ) : (
-                <Badge variant="muted">Canceled</Badge>
+                <Button asChild size="sm" variant="secondary"><Link href={`/t/${s.teacher.handle}`}>Rejoin</Link></Button>
               )}
             </CardHeader>
-            {s.status === "ACTIVE" && (
+            {live && (
               <CardContent className="flex flex-wrap gap-2">
                 {s.teacher.services.map((svc) => (
                   <Link key={svc.id} href={`/play/${svc.id}`} className="rounded-full border px-3 py-1 text-xs hover:border-primary">{svc.title}</Link>
@@ -68,12 +70,13 @@ export default async function MyFloor() {
               </CardContent>
             )}
           </Card>
-        ))}
+          );
+        })}
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm uppercase tracking-wide text-muted-foreground">Purchased lessons</h2>
-        {purchases.length === 0 && <p className="text-sm text-muted-foreground">No purchases yet.</p>}
+        <h2 className="text-sm uppercase tracking-wide text-muted-foreground">Your lessons</h2>
+        {purchases.length === 0 && <p className="text-sm text-muted-foreground">No single lessons yet.</p>}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {purchases.map((e) => e.service && (
             <Link key={e.id} href={`/play/${e.service.id}`}>

@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BadgeCheck, BookOpen, Sparkles } from "lucide-react";
+import { BadgeCheck, BookOpen, MessageCircle, Sparkles } from "lucide-react";
 import { toggleFollowAction } from "@/app/actions";
-import { publicServiceWhere } from "@/lib/access";
+import { activeSubWhere, publicServiceWhere } from "@/lib/access";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CATEGORIES, categoryOf } from "@/lib/categories";
-import { fmtDuration, parseStyles, rupees } from "@/lib/utils";
+import { fmtDuration, fmtUntil, parseStyles, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PayButton } from "@/components/pay-button";
+import { RequestAccess } from "@/components/request-access";
+import { requestPanel } from "@/lib/request-panel";
+import { startChatAction } from "@/app/chat-actions";
 import { Placeholder } from "@/components/placeholder";
 import { ReportButton } from "@/components/report-button";
 import { ServiceCard } from "@/components/service-card";
@@ -32,11 +34,14 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
   const [services, follow, sub] = await Promise.all([
     db.service.findMany({ where: { ...publicServiceWhere, teacherId: t.id }, include: { teacher: { include: { user: true } } }, orderBy: [{ featured: "desc" }, { createdAt: "asc" }] }),
     user ? db.follow.findUnique({ where: { studentId_teacherId: { studentId: user.id, teacherId: t.id } } }) : null,
-    user ? db.subscription.findFirst({ where: { studentId: user.id, teacherId: t.id, status: "ACTIVE" } }) : null,
+    user ? db.subscription.findFirst({ where: { studentId: user.id, teacherId: t.id, ...activeSubWhere() } }) : null,
   ]);
   const isOwner = user?.id === t.userId;
   const style = parseStyles(t.styles)[0] ?? "Dance";
   const courseLessons = services.filter((s) => s.includedInSub);
+  const courseReq = user && !isOwner && !sub && courseLessons.length > 0
+    ? await requestPanel(user.id, t, t.user.name, null, t.monthlyPricePaise, `${style} course`)
+    : null;
 
   return (
     <div className="space-y-8">
@@ -59,9 +64,16 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
               <Button asChild variant="secondary"><Link href={`/login?next=/t/${t.handle}`}>Sign in to follow</Link></Button>
             )}
             {sub ? (
-              <p className="rounded-md border border-primary/40 p-2 text-center text-sm text-primary">Subscribed — renews {sub.currentPeriodEnd.toLocaleDateString("en-IN")}</p>
-            ) : (
-              <PayButton kind="SUBSCRIPTION" id={t.id} amountPaise={t.monthlyPricePaise} back={`/t/${t.handle}`} label="Join the course" />
+              <p className="rounded-md border border-primary/40 p-2 text-center text-sm text-primary">In the course · access {sub.currentPeriodEnd ? `until ${fmtUntil(sub.currentPeriodEnd)}` : "with no expiry"}</p>
+            ) : courseReq ? (
+              <RequestAccess teacherId={t.id} teacherName={t.user.name} amountPaise={t.monthlyPricePaise} label="Join the course" upi={courseReq.upi} pending={courseReq.pending} />
+            ) : !user && courseLessons.length > 0 ? (
+              <Button asChild><Link href={`/login?next=/t/${t.handle}`}>Sign in to join the course</Link></Button>
+            ) : null}
+            {user && (
+              <form action={startChatAction.bind(null, t.id)}>
+                <Button variant="ghost" className="w-full"><MessageCircle /> Message {t.user.name.split(" ")[0]}</Button>
+              </form>
             )}
           </div>
         )}
@@ -111,10 +123,6 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
         <Placeholder title="Membership tiers" action="Join Inner Circle">
           Two tiers per teacher: Member ({rupees(t.monthlyPricePaise)}/mo, all included lessons) and Inner Circle (adds live
           classes and feedback on your takes).
-        </Placeholder>
-        <Placeholder title="Message / custom choreo request" action="Message teacher">
-          Direct messages with the teacher and a paid request flow for custom choreography (wedding sangeet, cover
-          competition) with a quote and delivery date.
         </Placeholder>
       </section>
     </div>

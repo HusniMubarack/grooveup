@@ -78,6 +78,9 @@ model User {
   reportsFiled    Report[]        @relation("reporter")
   reportsAgainst  Report[]        @relation("targetUser")
   auditLogs       AuditLog[]
+  accessRequests  AccessRequest[]
+  conversations   Conversation[]
+  messagesSent    Message[]
 }
 
 model TeacherProfile {
@@ -91,11 +94,16 @@ model TeacherProfile {
   monthlyPricePaise Int      @default(49900)
   verified          Boolean  @default(false)
   featured          Boolean  @default(false)
+  /// Payment details shown to students when they request access (paid outside the app).
+  upiId             String?
+  showUpiQr         Boolean  @default(true)
 
-  services      Service[]
-  followers     Follow[]
-  subscriptions Subscription[]
-  entitlements  Entitlement[]
+  services       Service[]
+  followers      Follow[]
+  subscriptions  Subscription[]
+  entitlements   Entitlement[]
+  accessRequests AccessRequest[]
+  conversations  Conversation[]
 }
 
 model Service {
@@ -128,6 +136,7 @@ model Service {
   sections       ServiceSection[]
   entitlements   Entitlement[]
   practiceEvents PracticeEvent[]
+  accessRequests AccessRequest[]
   orders         Order[]
   reports        Report[]
 }
@@ -158,7 +167,8 @@ model Subscription {
   teacherId        String
   teacher          TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   status           SubStatus      @default(ACTIVE)
-  currentPeriodEnd DateTime
+  /// null = never expires
+  currentPeriodEnd DateTime?
 }
 
 /// teacherId / serviceId are optional links so commerce views can show "related teacher/service".
@@ -172,6 +182,8 @@ model Order {
   teacherId   String?
   serviceId   String?
   service     Service?        @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  /// MOCK (demo checkout) | UPI (paid to the teacher outside the app, approved by them)
+  method      String          @default("MOCK")
   createdAt   DateTime        @default(now())
 }
 
@@ -184,6 +196,8 @@ model Entitlement {
   teacherId String?
   teacher   TeacherProfile?   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   source    EntitlementSource
+  /// null = never expires
+  expiresAt DateTime?
 }
 
 model PracticeEvent {
@@ -220,4 +234,60 @@ model AuditLog {
   action    String
   detail    String
   createdAt DateTime @default(now())
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELED
+}
+
+/// A student asks a teacher for their course (serviceId = null) or one lesson, after paying them outside the app.
+model AccessRequest {
+  id           String         @id @default(cuid())
+  studentId    String
+  student      User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId    String
+  teacher      TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  serviceId    String?
+  service      Service?       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  amountPaise  Int
+  paymentRef   String?
+  note         String?
+  status       RequestStatus  @default(PENDING)
+  decisionNote String?
+  accessUntil  DateTime?
+  createdAt    DateTime       @default(now())
+  decidedAt    DateTime?
+
+  @@index([teacherId, status])
+  @@index([studentId, status])
+}
+
+model Conversation {
+  id            String         @id @default(cuid())
+  studentId     String
+  student       User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherId     String
+  teacher       TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  lastMessageAt DateTime       @default(now())
+  studentReadAt DateTime       @default(now())
+  teacherReadAt DateTime       @default(now())
+  messages      Message[]
+
+  @@unique([studentId, teacherId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// null = system message (request sent, approved, declined…)
+  senderId       String?
+  sender         User?        @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  body           String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }
