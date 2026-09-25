@@ -55,6 +55,29 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
    **Migrations run automatically on every Vercel build** (`vercel-build` → `prisma/migrate.ts`): new columns are added to Turso before the new code goes live, existing data is kept, and if a migration fails the build fails and the previous deployment stays up. Run `pnpm db:migrate` to do the same by hand. `pnpm prisma db seed` is only for (re)loading the demo data, and it wipes the database.
 4. **Check the deployment:** sign in as `admin@grooveup.dev`. The **Setup** card on `/admin` shows the database, whether migrations are up to date, and whether Mux uploads and signed playback are configured (it only shows whether each is set, never the values).
 
+## Deployments (branches, previews, production)
+
+- **`main` is production.** Vercel → Settings → Git → Production Branch = `main`. A merge into `main` deploys the live site.
+- **Every other branch makes a Preview deployment** with its own URL (and a stable `grooveup-git-<branch>-<you>.vercel.app`). Feature work, including Claude's `claude/...` branches, only ever creates previews.
+- **Shipping:** push a branch → test its preview → open a PR into `main` → merge. To undo a bad release: Vercel → Deployments → pick the previous production deploy → **Promote**.
+- **Keep preview data separate from production.** Every build runs database migrations, so previews must not point at the live database. Scope the env vars in Vercel:
+
+| Variable | Production | Preview |
+| --- | --- | --- |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | live DB (`grooveup`) | dev DB (`grooveup-dev`) |
+| `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`, `MUX_SIGNING_KEY`, `MUX_PRIVATE_KEY` | Mux *Production* environment | Mux *Development* environment |
+| `AUTH_SECRET` | its own value | a different value |
+
+  Create and seed the dev database once:
+  ```bash
+  turso db create grooveup-dev
+  turso db show grooveup-dev --url   # → dev TURSO_DATABASE_URL
+  turso db tokens create grooveup-dev  # → dev TURSO_AUTH_TOKEN
+  TURSO_DATABASE_URL="…" TURSO_AUTH_TOKEN="…" pnpm prisma db seed
+  ```
+  The `/admin` Setup card shows which database a deployment is using.
+- **Vercel Hobby (free)** is for personal, non-commercial projects and builds one deployment at a time. Preview URLs are only visible to you while logged in to Vercel. Move to Pro before charging real customers.
+
 ## Video hosting (Mux)
 
 Teachers upload lesson videos from the Studio **straight to [Mux](https://www.mux.com)**: the file goes from their browser to Mux in resumable 5 MB chunks and never passes through this app or Vercel. Students stream it through the Groove up player (HLS, adaptive quality) with speed, mirror, sections and A–B loop.
