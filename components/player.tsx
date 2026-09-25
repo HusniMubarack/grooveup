@@ -21,6 +21,8 @@ export function Player({ serviceId, src, poster, sections, startAt }: { serviceI
   const [loopMode, setLoopMode] = useState(false); // section taps loop that section
   const [loop, setLoopState] = useState<Loop>(null);
   const [markA, setMarkA] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const hlsResume = useRef(false); // hls.js handles the resume position itself
   const setLoop = (l: Loop) => { loopRef.current = l; setLoopState(l); };
 
   const save = (completed = false) => {
@@ -30,24 +32,60 @@ export function Player({ serviceId, src, poster, sections, startAt }: { serviceI
     savePracticeAction(serviceId, el.currentTime, completed);
   };
 
-  // HLS (Mux) streams: Safari plays them natively, other browsers get hls.js on demand.
+  // HLS (Mux) streams: use hls.js wherever Media Source Extensions exist (Chrome, Edge, Firefox,
+  // Safari, iOS 17.1+). Browser-native HLS is only a fallback: outside Safari it reports "maybe" but
+  // breaks on the seeking, speed changes and looping this player does.
   useEffect(() => {
     const el = v.current;
     if (!el) return;
-    if (!src.includes(".m3u8") || el.canPlayType("application/vnd.apple.mpegurl")) {
+    setError(null);
+    if (!src) return;
+    if (!src.includes(".m3u8")) {
       el.src = src;
       return;
     }
-    let destroy = () => {};
+    let hls: import("hls.js").default | null = null;
+    let cancelled = false;
     import("hls.js").then(({ default: Hls }) => {
-      if (!Hls.isSupported()) { el.src = src; return; }
-      const hls = new Hls();
+      if (cancelled) return;
+      if (!Hls.isSupported()) {
+        if (el.canPlayType("application/vnd.apple.mpegurl")) el.src = src;
+        else setError("This browser can't play the video. Try Chrome, Safari or Firefox.");
+        return;
+      }
+      hlsResume.current = true;
+      hls = new Hls({ startPosition: startAt > 0 ? startAt : -1 });
+      let retried = { network: false, media: false };
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal || !hls) return;
+        const code = data.response?.code;
+        // Retry once for temporary failures on segments; access errors and a failed playlist won't fix themselves.
+        const transient = !code || code >= 500;
+        const playlist = /manifest/i.test(data.details);
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && transient && !playlist && !retried.network) {
+          retried = { ...retried, network: true };
+          return hls.startLoad();
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !retried.media) {
+          retried = { ...retried, media: true };
+          return hls.recoverMediaError();
+        }
+        setError(
+          code === 403 || code === 401
+            ? "Your viewing link has expired. Reload to get a fresh one."
+            : data.type === Hls.ErrorTypes.NETWORK_ERROR
+              ? `Couldn't reach the video server${code ? ` (HTTP ${code})` : ""}. Check your connection and reload.`
+              : `The video couldn't be played (${data.details}).`,
+        );
+      });
       hls.loadSource(src);
       hls.attachMedia(el);
-      destroy = () => hls.destroy();
     });
-    return () => destroy();
-  }, [src]);
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+    };
+  }, [src, startAt]);
 
   useEffect(() => {
     const el = v.current;
@@ -97,7 +135,17 @@ export function Player({ serviceId, src, poster, sections, startAt }: { serviceI
 
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-lg border bg-black">
+      <div className="relative overflow-hidden rounded-lg border bg-black">
+        {(error || !src) && (
+          <div role="alert" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85 p-4 text-center text-sm">
+            <p>{src ? error : "No video for this lesson yet."}</p>
+            {src && (
+              <button onClick={() => location.reload()} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+                Reload
+              </button>
+            )}
+          </div>
+        )}
         <video
           ref={v}
           poster={poster}
@@ -110,12 +158,17 @@ export function Player({ serviceId, src, poster, sections, startAt }: { serviceI
             const el = e.currentTarget;
             setDur(el.duration);
             el.playbackRate = speed;
-            if (startAt > 0 && startAt < el.duration - 1) el.currentTime = startAt;
+            if (!hlsResume.current && startAt > 0 && startAt < el.duration - 1) el.currentTime = startAt;
           }}
           onTimeUpdate={(e) => {
             const now = e.currentTarget.currentTime;
             setT(now);
             if (Math.abs(now - lastSaved.current) >= 10) save();
+          }}
+          onError={(e) => {
+            // hls.js reports its own errors; this covers MP4 links and native HLS.
+            const err = e.currentTarget.error;
+            if (err && !hlsResume.current) setError(`The video couldn't load (${["", "aborted", "network error", "unsupported format", "source not supported"][err.code] ?? `code ${err.code}`}).`);
           }}
           onPlay={() => setPlaying(true)}
           onPause={() => { setPlaying(false); save(); }}
