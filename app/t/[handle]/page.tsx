@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BadgeCheck, Sparkles } from "lucide-react";
+import { BadgeCheck, BookOpen, Sparkles } from "lucide-react";
 import { toggleFollowAction } from "@/app/actions";
 import { publicServiceWhere } from "@/lib/access";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { parseStyles, rupees } from "@/lib/utils";
+import { CATEGORIES, categoryOf } from "@/lib/categories";
+import { fmtDuration, parseStyles, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PayButton } from "@/components/pay-button";
@@ -34,6 +35,8 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
     user ? db.subscription.findFirst({ where: { studentId: user.id, teacherId: t.id, status: "ACTIVE" } }) : null,
   ]);
   const isOwner = user?.id === t.userId;
+  const style = parseStyles(t.styles)[0] ?? "Dance";
+  const courseLessons = services.filter((s) => s.includedInSub);
 
   return (
     <div className="space-y-8">
@@ -58,19 +61,47 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
             {sub ? (
               <p className="rounded-md border border-primary/40 p-2 text-center text-sm text-primary">Subscribed — renews {sub.currentPeriodEnd.toLocaleDateString("en-IN")}</p>
             ) : (
-              <PayButton kind="SUBSCRIPTION" id={t.id} amountPaise={t.monthlyPricePaise} back={`/t/${t.handle}`} label="Subscribe monthly" />
+              <PayButton kind="SUBSCRIPTION" id={t.id} amountPaise={t.monthlyPricePaise} back={`/t/${t.handle}`} label="Join the course" />
             )}
           </div>
         )}
         <div className="mt-4"><ReportButton targetType="USER" targetId={t.userId} /></div>
       </section>
 
-      <section>
-        <h2 className="mb-3 font-serif text-2xl">Lessons</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-          {services.map((s) => <ServiceCard key={s.id} s={s} />)}
-        </div>
-      </section>
+      {courseLessons.length > 0 && (
+        <section className="space-y-3 rounded-xl border border-primary/40 bg-card p-4">
+          <div className="flex items-center gap-2">
+            <BookOpen className="size-5 text-primary" />
+            <h2 className="font-serif text-2xl">{style} course</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {courseLessons.length} lessons · {rupees(t.monthlyPricePaise)}/mo · new lessons join automatically.
+          </p>
+          <ol className="divide-y rounded-md border">
+            {courseLessons.map((s, i) => (
+              <li key={s.id}>
+                <Link href={`/s/${s.id}`} className="flex items-center gap-3 p-2 text-sm hover:bg-muted/40">
+                  <span className="w-5 text-right text-xs text-muted-foreground">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                  <span className="text-xs text-muted-foreground">{fmtDuration(s.durationSec)}</span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {(["moves", "choreo"] as const).map((k) => {
+        const list = services.filter((s) => categoryOf(s) === k);
+        return list.length === 0 ? null : (
+          <section key={k}>
+            <h2 className="mb-3 font-serif text-2xl">{CATEGORIES[k].name}</h2>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-5 md:grid-cols-3">
+              {list.map((s) => <ServiceCard key={s.id} s={s} />)}
+            </div>
+          </section>
+        );
+      })}
 
       <section className="grid gap-3 md:grid-cols-2">
         <Placeholder title="Programs" action="Start program">

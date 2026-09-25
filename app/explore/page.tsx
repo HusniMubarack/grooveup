@@ -1,95 +1,115 @@
 import Link from "next/link";
-import { BadgeCheck } from "lucide-react";
-import type { Level, Prisma } from "@prisma/client";
+import { ArrowRight, BookOpen, Film, Zap } from "lucide-react";
 import { publicServiceWhere } from "@/lib/access";
+import { CATEGORIES, CATEGORY_KEYS, type CategoryKey, findCourses, liveIn } from "@/lib/categories";
 import { db } from "@/lib/db";
-import { cn, LEVELS, parseStyles } from "@/lib/utils";
-import { ServiceCard } from "@/components/service-card";
+import { cn } from "@/lib/utils";
+import { CourseCard, ServiceCard } from "@/components/service-card";
 
-type SP = { style?: string; level?: string; price?: string };
+const ICONS = { moves: Zap, choreo: Film, courses: BookOpen } as const;
+const ROW = 6;
 
-function Chip({ sp, k, v, label }: { sp: SP; k: keyof SP; v?: string; label: string }) {
-  const active = sp[k] === v;
-  const next = new URLSearchParams(Object.entries({ ...sp, [k]: active ? undefined : v }).filter(([, x]) => x) as [string, string][]);
+const lessonQuery = (cat: "moves" | "choreo", style?: string, take?: number) =>
+  db.service.findMany({
+    where: { AND: [liveIn(cat), style ? { style } : {}] },
+    include: { teacher: { include: { user: { select: { name: true } } } } },
+    orderBy: [{ featured: "desc" }, { teacher: { featured: "desc" } }, { createdAt: "desc" }],
+    take,
+  });
+
+function Row({ children }: { children: React.ReactNode }) {
+  return <div className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 [&>*]:w-40 [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-52">{children}</div>;
+}
+function Grid({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-2 gap-x-3 gap-y-5 md:grid-cols-3 lg:grid-cols-4">{children}</div>;
+}
+
+export default async function Explore({ searchParams }: { searchParams: Promise<{ cat?: string; style?: string }> }) {
+  const sp = await searchParams;
+  const cat = CATEGORY_KEYS.includes(sp.cat as CategoryKey) ? (sp.cat as CategoryKey) : undefined;
+
   return (
-    <Link
-      href={`/explore?${next}`}
-      className={cn(
-        "shrink-0 rounded-full border px-3 py-1 text-xs capitalize",
-        active ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:border-primary/60",
-      )}
-    >
-      {label}
-    </Link>
+    <div className="space-y-6">
+      <div className="grid gap-2 sm:grid-cols-3">
+        {CATEGORY_KEYS.map((k) => {
+          const Icon = ICONS[k];
+          const active = cat === k;
+          return (
+            <Link
+              key={k}
+              href={active ? "/explore" : `/explore?cat=${k}`}
+              className={cn(
+                "flex items-center gap-3 rounded-xl border p-3 transition-colors sm:flex-col sm:items-start sm:p-4",
+                active ? "border-primary bg-primary/15" : "bg-card hover:border-primary/60",
+              )}
+            >
+              <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", active ? "bg-primary text-primary-foreground" : "bg-muted text-primary")}>
+                <Icon className="size-5" />
+              </span>
+              <span>
+                <span className="block font-semibold">{CATEGORIES[k].name}</span>
+                <span className="block text-xs text-muted-foreground">{CATEGORIES[k].tagline}</span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+
+      {cat ? <CategoryView cat={cat} style={sp.style} /> : <Overview />}
+    </div>
   );
 }
 
-export default async function Explore({ searchParams }: { searchParams: Promise<SP> }) {
-  const sp = await searchParams;
-  const where: Prisma.ServiceWhereInput = { ...publicServiceWhere };
-  if (sp.style) where.style = sp.style;
-  if (sp.level && LEVELS.includes(sp.level as Level)) where.level = sp.level as Level;
-  if (sp.price === "free") where.OR = [{ isFree: true }, { type: "DEMO" }];
-  if (sp.price === "paid") Object.assign(where, { isFree: false, pricePaise: { gt: 0 }, NOT: { type: "DEMO" } });
-  if (sp.price === "sub") where.includedInSub = true;
+async function Overview() {
+  const [moves, choreo, courses] = await Promise.all([lessonQuery("moves", undefined, ROW), lessonQuery("choreo", undefined, ROW), findCourses()]);
+  const sections: [CategoryKey, React.ReactNode, number][] = [
+    ["moves", moves.map((s) => <ServiceCard key={s.id} s={s} />), moves.length],
+    ["choreo", choreo.map((s) => <ServiceCard key={s.id} s={s} />), choreo.length],
+    ["courses", courses.slice(0, ROW).map((t) => <CourseCard key={t.id} t={t} />), courses.length],
+  ];
+  return (
+    <>
+      {sections.map(([k, cards, n]) => (
+        <section key={k} className="space-y-2">
+          <div className="flex items-end justify-between">
+            <h2 className="font-serif text-xl">{CATEGORIES[k].name}</h2>
+            <Link href={`/explore?cat=${k}`} className="flex items-center gap-1 text-sm text-primary">See all <ArrowRight className="size-3.5" /></Link>
+          </div>
+          {n === 0 ? <p className="text-sm text-muted-foreground">Nothing here yet.</p> : <Row>{cards}</Row>}
+        </section>
+      ))}
+    </>
+  );
+}
 
-  const [services, styles, teachers] = await Promise.all([
-    db.service.findMany({
-      where,
-      include: { teacher: { include: { user: true } } },
-      // Featured services pinned to the top, then featured teachers.
-      orderBy: [{ featured: "desc" }, { teacher: { featured: "desc" } }, { createdAt: "desc" }],
-    }),
-    db.service.findMany({ where: publicServiceWhere, select: { style: true }, distinct: ["style"] }),
-    db.teacherProfile.findMany({
-      where: { user: { banned: false } },
-      include: { user: true },
-      orderBy: [{ featured: "desc" }, { verified: "desc" }],
-    }),
-  ]);
+async function CategoryView({ cat, style }: { cat: CategoryKey; style?: string }) {
+  const styleRows = await db.service.findMany({ where: publicServiceWhere, select: { style: true }, distinct: ["style"] });
+  const items =
+    cat === "courses"
+      ? (await findCourses(style)).map((t) => <CourseCard key={t.id} t={t} />)
+      : (await lessonQuery(cat, style)).map((s) => <ServiceCard key={s.id} s={s} />);
 
   return (
-    <div className="space-y-5">
-      <h1 className="font-serif text-3xl">Explore</h1>
-
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
-        {teachers.map((t) => (
+    <section className="space-y-4">
+      <div>
+        <h1 className="font-serif text-2xl">{CATEGORIES[cat].name}</h1>
+        <p className="text-sm text-muted-foreground">{CATEGORIES[cat].blurb}</p>
+      </div>
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
+        {[undefined, ...styleRows.map((r) => r.style)].map((st) => (
           <Link
-            key={t.id}
-            href={`/t/${t.handle}`}
+            key={st ?? "all"}
+            href={`/explore?cat=${cat}${st ? `&style=${encodeURIComponent(st)}` : ""}`}
             className={cn(
-              "flex shrink-0 items-center gap-1 rounded-lg border px-3 py-2 text-sm",
-              t.featured ? "border-primary bg-primary/10" : "bg-card",
+              "shrink-0 rounded-full border px-3 py-1 text-xs",
+              style === st ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:border-primary/60",
             )}
           >
-            {t.featured && <span className="text-primary">★</span>}
-            {t.user.name}
-            {t.verified && <BadgeCheck className="size-3.5 text-primary" />}
-            <span className="text-xs text-muted-foreground">· {parseStyles(t.styles)[0]}</span>
+            {st ?? "All styles"}
           </Link>
         ))}
       </div>
-
-      <div className="space-y-2">
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
-          {styles.map(({ style }) => <Chip key={style} sp={sp} k="style" v={style} label={style} />)}
-        </div>
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
-          {LEVELS.map((l) => <Chip key={l} sp={sp} k="level" v={l} label={l.toLowerCase()} />)}
-          <span className="w-px shrink-0 bg-border" />
-          <Chip sp={sp} k="price" v="free" label="Free" />
-          <Chip sp={sp} k="price" v="paid" label="Paid" />
-          <Chip sp={sp} k="price" v="sub" label="Sub" />
-        </div>
-      </div>
-
-      {services.length === 0 ? (
-        <p className="py-10 text-center text-muted-foreground">Nothing matches those filters yet.</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {services.map((s) => <ServiceCard key={s.id} s={s} />)}
-        </div>
-      )}
-    </div>
+      {items.length === 0 ? <p className="py-10 text-center text-muted-foreground">Nothing in this style yet.</p> : <Grid>{items}</Grid>}
+    </section>
   );
 }

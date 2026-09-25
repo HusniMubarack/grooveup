@@ -4,7 +4,9 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  // Local dev always uses this file. Production talks to Turso through the libSQL adapter (lib/db.ts),
+  // so this is deliberately not read from DATABASE_URL, which is often already set in a shell for another project.
+  url      = "file:./dev.db"
 }
 
 enum Role {
@@ -117,6 +119,11 @@ model Service {
   unpublishedByAdmin Boolean        @default(false)
   unpublishedReason  String?
   createdAt          DateTime       @default(now())
+  /// Mux-hosted video (optional; videoUrl is used when these are empty)
+  muxUploadId        String?
+  muxAssetId         String?
+  muxPlaybackId      String?
+  videoStatus        String?        /// processing | ready | errored
 
   sections       ServiceSection[]
   entitlements   Entitlement[]

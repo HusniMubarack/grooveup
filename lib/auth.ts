@@ -83,7 +83,7 @@ export async function requireAdmin() {
 export async function currentMode(role?: Role): Promise<"student" | "teacher"> {
   if (role === "TEACHER") return "teacher";
   if (role !== "BOTH") return "student";
-  return (await cookies()).get("atelier-mode")?.value === "teacher" ? "teacher" : "student";
+  return (await cookies()).get("grooveup-mode")?.value === "teacher" ? "teacher" : "student";
 }
 
 export async function ensureTeacherProfile(userId: string, name: string) {
