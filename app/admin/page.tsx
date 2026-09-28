@@ -6,7 +6,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Placeholder } from "@/components/placeholder";
 
 export default async function AdminOverview() {
-  const [users, teachers, published, activeSubs, openReports, gmv, logs, reports, setup] = await Promise.all([
+  const [users, teachers, published, activeSubs, openReports, gmv, logs, reports, setup, pendingRequests] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { role: { in: ["TEACHER", "BOTH"] } } }),
     db.service.count({ where: { published: true, unpublishedByAdmin: false } }),
@@ -16,16 +16,17 @@ export default async function AdminOverview() {
     db.auditLog.findMany({ include: { admin: true }, orderBy: { createdAt: "desc" }, take: 10 }),
     db.report.findMany({ where: { status: "OPEN" }, include: { targetUser: true, targetService: true }, orderBy: { createdAt: "desc" }, take: 5 }),
     setupStatus(),
+    db.accessRequest.count({ where: { status: "PENDING" } }),
   ]);
 
   const stats: [string, string | number][] = [
     ["Users", users], ["Teachers", teachers], ["Published services", published],
-    ["Active subs", activeSubs], ["Open reports", openReports], ["Mock GMV", rupees(gmv._sum.amountPaise ?? 0)],
+    ["Active subs", activeSubs], ["Open reports", openReports], ["Pending requests", pendingRequests], ["Mock GMV", rupees(gmv._sum.amountPaise ?? 0)],
   ];
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {stats.map(([k, v]) => (
           <Card key={k}><CardHeader className="p-3"><CardDescription className="text-xs">{k}</CardDescription><CardTitle className="text-xl text-primary">{v}</CardTitle></CardHeader></Card>
         ))}

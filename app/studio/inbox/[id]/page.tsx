@@ -32,7 +32,6 @@ export default async function StudioThread({ params, searchParams }: { params: P
         <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-card p-2">
           <span className="min-w-0 flex-1 text-xs">
             Wants <b>{r.service?.title ?? "your course"}</b> · {rupees(r.amountPaise)}
-            {r.paymentRef && <> · ref <span className="font-mono">{r.paymentRef}</span></>}
           </span>
           <ApproveForm requestId={r.id} isCourse={!r.serviceId} />
         </div>

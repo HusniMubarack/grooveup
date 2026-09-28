@@ -128,6 +128,25 @@ const TEACHERS: {
   },
 ];
 
+/** At least 3 tags per lesson (the Studio enforces this for new lessons too). */
+const TAGS: Record<string, string[]> = {
+  "Grooves 101: Bounce & Rock": ["grooves", "bounce", "beginner-friendly", "warm-up"],
+  "Running Man to Roger Rabbit Drill": ["party-steps", "footwork", "old-school", "technique"],
+  "'Night Shift' Full Choreography": ["full-routine", "hits", "floorwork", "freestyle"],
+  "Foundations Week 1: Groove, Bounce & Posture": ["grooves", "posture", "beginner-friendly", "musicality"],
+  "Adavu Foundations: Tatta Adavu": ["adavu", "aramandi", "classical", "beginner-friendly"],
+  "Alarippu, Step by Step": ["margam", "classical", "nritta", "full-routine"],
+  "Abhinaya Expressions Session": ["abhinaya", "expressions", "classical", "navarasa"],
+  "K-Pop Isolations Warm-up": ["isolations", "warm-up", "beginner-friendly"],
+  "Point Choreo Breakdown: Hook Moves": ["point-choreo", "hooks", "cover", "slow-breakdown"],
+  "Full Dance Cover: 'Starlight'": ["cover", "formations", "full-routine", "girl-group"],
+  "Stage Presence & Facial Expressions": ["stage-presence", "expressions", "cover", "filming"],
+  "Salsa On1 Basic Timing": ["on1", "timing", "beginner-friendly", "social"],
+  "Cross-Body Lead Variations": ["cross-body-lead", "partnerwork", "turns", "social"],
+  "Club Shines Pack": ["shines", "footwork", "solo", "social"],
+  "Partnerwork Session: Connection & Frame": ["partnerwork", "connection", "frame", "beginner-friendly"],
+};
+
 async function main() {
   // Bring the schema up to date first, so seeding works on a brand-new database.
   const turso = tursoUrl();
@@ -173,8 +192,6 @@ async function main() {
           create: {
             handle: t.handle, bio: t.bio, styles: JSON.stringify([t.style]),
             monthlyPricePaise: t.price, verified: !!t.verified, featured: !!t.featured,
-            // Clearly fake demo VPA; teachers set their real one in Studio → Requests → Payment details.
-            upiId: `${t.handle}@demo-upi`,
           },
         },
       },
@@ -189,6 +206,10 @@ async function main() {
           durationSec: s.durationSec, ...clip(clipIdx++),
           pricePaise: s.pricePaise ?? 0, includedInSub: !!s.includedInSub, isFree: !!s.isFree,
           featured: !!s.featured,
+          tags: JSON.stringify(TAGS[s.title] ?? [t.style.toLowerCase(), s.type.toLowerCase(), s.level.toLowerCase()]),
+          // Teacher-picked preview: a short range near the start.
+          previewStartSec: s.durationSec > 20 ? 2 : 0,
+          previewEndSec: s.durationSec > 20 ? 14 : Math.min(10, s.durationSec),
           published: !s.unpublishedByAdmin,
           unpublishedByAdmin: !!s.unpublishedByAdmin,
           unpublishedReason: s.unpublishedByAdmin ?? null,
@@ -201,10 +222,16 @@ async function main() {
   }
 
   const student = await db.user.create({
-    data: { email: "student@grooveup.dev", name: "Riya Sharma", role: "STUDENT", passwordHash, createdAt: daysAgo(20) },
+    data: {
+      email: "student@grooveup.dev", name: "Riya Sharma", role: "STUDENT", passwordHash, createdAt: daysAgo(20),
+      danceStyles: JSON.stringify({ styles: ["Hip-Hop", "K-Pop"], level: "BEGINNER" }),
+    },
   });
   const arjun = await db.user.create({
-    data: { email: "arjun@grooveup.dev", name: "Arjun Mehta", role: "STUDENT", passwordHash, createdAt: daysAgo(30) },
+    data: {
+      email: "arjun@grooveup.dev", name: "Arjun Mehta", role: "STUDENT", passwordHash, createdAt: daysAgo(30),
+      danceStyles: JSON.stringify({ styles: ["Bharatanatyam", "Salsa", "K-Pop"], level: "INTERMEDIATE" }),
+    },
   });
 
   // Riya has warmed up with a free demo so My Floor isn't empty.
@@ -262,14 +289,14 @@ async function main() {
     data: { adminId: admin.id, action: "service.unpublish", detail: "Club Shines Pack — Copyright claim: soundtrack is an unlicensed commercial recording.", createdAt: daysAgo(3) },
   });
 
-  // Access requests (paid outside the app by UPI) and chats.
+  // Access requests (approved by the teacher or an admin until in-app payments exist) and chats.
   const minutesAgo = (m: number) => new Date(Date.now() - m * 60000);
   await db.accessRequest.create({
-    data: { studentId: student.id, teacherId: teachers.kabir.profileId, amountPaise: 49900, paymentRef: "4321 8765 1234", note: "Paid on GPay just now", createdAt: minutesAgo(90) },
+    data: { studentId: student.id, teacherId: teachers.kabir.profileId, amountPaise: 49900, note: "Total beginner, can’t wait to start!", createdAt: minutesAgo(90) },
   });
   const cbl = teachers.diego.services[1];
   await db.accessRequest.create({
-    data: { studentId: arjun.id, teacherId: teachers.diego.profileId, serviceId: cbl.id, amountPaise: 14900, paymentRef: "UPI 9988 7766", createdAt: minutesAgo(300) },
+    data: { studentId: arjun.id, teacherId: teachers.diego.profileId, serviceId: cbl.id, amountPaise: 14900, createdAt: minutesAgo(300) },
   });
   const chat = async (studentId: string, teacherId: string, lines: [string | null, string, number][], teacherRead: boolean) => {
     const c = await db.conversation.create({ data: { studentId, teacherId } });
@@ -278,8 +305,8 @@ async function main() {
     await db.conversation.update({ where: { id: c.id }, data: { lastMessageAt: last, studentReadAt: last, teacherReadAt: teacherRead ? last : minutesAgo(10000) } });
   };
   await chat(student.id, teachers.kabir.profileId, [
-    [null, "Access requested for the course · ₹499 · UPI ref 4321 8765 1234\n“Paid on GPay just now”", 90],
-    [student.id, "Hi Kabir! Just paid for the course. Total beginner, is that okay?", 89],
+    [null, "Access requested for the course · ₹499\n“Total beginner, can’t wait to start!”", 90],
+    [student.id, "Hi Kabir! I just requested your course. Is it okay for a total beginner?", 89],
   ], false);
   await chat(arjun.id, teachers.ananya.profileId, [
     [arjun.id, "Namaste! Is the Alarippu lesson okay for someone with 6 months of practice?", 3000],
@@ -287,7 +314,7 @@ async function main() {
     [arjun.id, "Thank you, subscribing now 🙏", 2890],
   ], true);
   await chat(arjun.id, teachers.diego.profileId, [
-    [null, "Access requested for “Cross-Body Lead Variations” · ₹149 · UPI ref UPI 9988 7766", 300],
+    [null, "Access requested for “Cross-Body Lead Variations” · ₹149", 300],
   ], false);
 
   console.log("Seeded: admin, 4 teachers, 15 services, 2 students, 4 orders, 2 open reports, 2 pending requests, 3 chats.");

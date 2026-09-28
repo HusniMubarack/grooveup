@@ -1,7 +1,6 @@
-import QRCode from "qrcode";
-import type { TeacherProfile } from "@prisma/client";
 import { activeSubWhere, liveGrantWhere } from "./access";
 import { db } from "./db";
+import { timeAgo } from "./utils";
 
 export type ExpiryChoice = "never" | "1m" | "2m" | "3m" | "days";
 
@@ -28,26 +27,11 @@ export async function requestState(studentId: string, teacherId: string, service
   return { hasAccess: !!access, until, pending };
 }
 
-/** UPI deep link (opens GPay/PhonePe/Paytm on phones) with the amount pre-filled. */
-export function upiLink(t: Pick<TeacherProfile, "upiId">, payeeName: string, amountPaise: number, item: string) {
-  if (!t.upiId) return null;
-  const p = new URLSearchParams({ pa: t.upiId, pn: payeeName, am: (amountPaise / 100).toFixed(2), cu: "INR", tn: `Groove up: ${item}`.slice(0, 60) });
-  return `upi://pay?${p.toString()}`;
-}
-
-/** QR for the UPI link as inline SVG. Generated on the fly: nothing is uploaded or stored. */
-export async function upiQrSvg(link: string) {
-  return QRCode.toString(link, { type: "svg", margin: 1, color: { dark: "#0b0a09", light: "#ffffff" } });
-}
-
-/** Plausible UPI VPA: name@handle. */
-export const isUpiId = (v: string) => /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,64}$/.test(v);
-
-export type UpiInfo = { id: string; link: string; qrSvg: string | null } | null;
-
-/** Everything the request panel needs to show the teacher's payment details. */
-export async function upiInfo(t: Pick<TeacherProfile, "upiId" | "showUpiQr">, payeeName: string, amountPaise: number, item: string): Promise<UpiInfo> {
-  const link = upiLink(t, payeeName, amountPaise, item);
-  if (!link || !t.upiId) return null;
-  return { id: t.upiId, link, qrSvg: t.showUpiQr ? await upiQrSvg(link) : null };
+/** Server-side props for <RequestAccess>: whether there's already a pending request. */
+export async function requestPanel(studentId: string, teacherId: string, serviceId: string | null) {
+  const state = await requestState(studentId, teacherId, serviceId);
+  return {
+    hasAccess: state.hasAccess,
+    pending: state.pending ? { id: state.pending.id, sentAgo: timeAgo(state.pending.createdAt) } : null,
+  };
 }

@@ -42,7 +42,6 @@ export default async function MyRequests() {
                 <Link href={target} className="font-medium hover:text-primary">{r.service?.title ?? `${r.teacher.user.name}'s course`}</Link>
                 <p className="text-xs text-muted-foreground">
                   {r.teacher.user.name} · {rupees(r.amountPaise)} · sent {timeAgo(r.createdAt)}
-                  {r.paymentRef && ` · ref ${r.paymentRef}`}
                 </p>
               </div>
               <Badge variant={r.status === "APPROVED" ? "outline" : r.status === "PENDING" ? "default" : "muted"}>{LABEL[r.status]}</Badge>

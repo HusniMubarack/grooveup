@@ -52,32 +52,71 @@ export async function muxUploadBelongsTo(uploadId: string, teacherId: string) {
   }
 }
 
-type MuxFields = Pick<Service, "id" | "muxUploadId" | "muxAssetId" | "muxPlaybackId" | "videoStatus">;
+type MuxFields = Pick<
+  Service,
+  | "id" | "muxUploadId" | "muxAssetId" | "muxPlaybackId" | "videoStatus"
+  | "previewStartSec" | "previewEndSec" | "previewAssetId" | "previewPlaybackId" | "previewStatus" | "previewRange"
+>;
 
-/** Pull upload → asset → playback id from Mux until the video is ready. Cheap no-op once ready. */
+const statusOf = (s?: string) => (s === "ready" ? "ready" : s === "errored" ? "errored" : "processing");
+const signedId = (ids?: { id: string; policy: string }[] | null) => ids?.find((p) => p.policy === "signed")?.id ?? null;
+
+/**
+ * Pull upload → asset → playback id from Mux until the video is ready, then keep the preview clip
+ * (the teacher-picked ≤ 30 s range, cut by Mux as its own asset) in step. Cheap no-op once all is ready.
+ */
 export async function syncMuxVideo<T extends MuxFields>(s: T): Promise<T> {
-  if (!muxEnabled() || !s.muxUploadId || s.videoStatus === "ready" || s.videoStatus === "errored") return s;
+  if (!muxEnabled() || !s.muxUploadId) return s;
   try {
-    let assetId = s.muxAssetId;
-    if (!assetId) {
-      const up = await mux().video.uploads.retrieve(s.muxUploadId);
-      if (up.status === "errored" || up.status === "cancelled" || up.status === "timed_out") return save(s, { videoStatus: "errored" });
-      assetId = up.asset_id ?? null;
-      if (!assetId) return s; // still uploading
-    }
-    const asset = await mux().video.assets.retrieve(assetId);
-    const playbackId = asset.playback_ids?.find((p) => p.policy === "signed")?.id ?? null;
-    const videoStatus = asset.status === "ready" ? "ready" : asset.status === "errored" ? "errored" : "processing";
-    return save(s, {
-      muxAssetId: assetId,
-      muxPlaybackId: playbackId,
-      videoStatus,
-      ...(videoStatus === "ready" && asset.duration ? { durationSec: Math.round(asset.duration) } : {}),
-    });
+    if (s.videoStatus !== "ready" && s.videoStatus !== "errored") s = await syncMain(s);
+    if (s.videoStatus === "ready" && s.muxAssetId) s = await syncPreview(s);
+    return s;
   } catch (e) {
-    console.error("Mux sync failed", e);
+    console.error("Mux sync failed:", e instanceof Error ? e.message : e);
     return s;
   }
+}
+
+async function syncMain<T extends MuxFields>(s: T): Promise<T> {
+  let assetId = s.muxAssetId;
+  if (!assetId) {
+    const up = await mux().video.uploads.retrieve(s.muxUploadId!);
+    if (up.status === "errored" || up.status === "cancelled" || up.status === "timed_out") return save(s, { videoStatus: "errored" });
+    assetId = up.asset_id ?? null;
+    if (!assetId) return s; // still uploading
+  }
+  const asset = await mux().video.assets.retrieve(assetId);
+  const videoStatus = statusOf(asset.status);
+  return save(s, {
+    muxAssetId: assetId,
+    muxPlaybackId: signedId(asset.playback_ids),
+    videoStatus,
+    ...(videoStatus === "ready" && asset.duration ? { durationSec: Math.round(asset.duration) } : {}),
+  });
+}
+
+async function syncPreview<T extends MuxFields>(s: T): Promise<T> {
+  const wanted = s.previewStartSec != null && s.previewEndSec != null ? `${s.previewStartSec}-${s.previewEndSec}` : null;
+  // Range removed or changed: drop the old clip.
+  if (s.previewAssetId && s.previewRange !== wanted) {
+    await deleteMuxAsset(s.previewAssetId);
+    s = await save(s, { previewAssetId: null, previewPlaybackId: null, previewStatus: null, previewRange: null });
+  }
+  if (!wanted) return s;
+  if (!s.previewAssetId) {
+    const clip = await mux().video.assets.create({
+      inputs: [{ url: `mux://assets/${s.muxAssetId}`, start_time: s.previewStartSec!, end_time: s.previewEndSec! }],
+      playback_policies: ["signed"],
+      video_quality: "basic",
+      passthrough: `preview:${s.id}`,
+    });
+    return save(s, { previewAssetId: clip.id, previewRange: wanted, previewStatus: statusOf(clip.status), previewPlaybackId: signedId(clip.playback_ids) });
+  }
+  if (s.previewStatus !== "ready" && s.previewStatus !== "errored") {
+    const clip = await mux().video.assets.retrieve(s.previewAssetId);
+    return save(s, { previewStatus: statusOf(clip.status), previewPlaybackId: signedId(clip.playback_ids) });
+  }
+  return s;
 }
 
 async function save<T extends MuxFields>(s: T, data: Partial<Service>): Promise<T> {

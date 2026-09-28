@@ -26,6 +26,8 @@ export const CATEGORY_KEYS = Object.keys(CATEGORIES) as CategoryKey[];
 export const MOVE_MAX_SEC = 90;
 /** Practice/loop points a teacher can mark on one lesson. */
 export const MAX_SECTIONS = 8;
+/** Longest preview a teacher can pick. */
+export const MAX_PREVIEW_SEC = 30;
 export const CHOREO_MAX_SEC = 20 * 60;
 
 /** Labels for the Studio form; the enum stays STEP / CHOREO / SESSION / DEMO. */
@@ -61,13 +63,15 @@ export function durationError(type: ServiceType, sec: number): string | null {
 }
 
 /** Courses = teachers (not banned) with at least one live lesson included in their subscription. */
-export async function findCourses(style?: string) {
+export async function findCourses(style?: string, onlyStyles?: string[] | null) {
   const lessons: Prisma.ServiceWhereInput = { AND: [publicServiceWhere, { includedInSub: true }] };
   const teachers = await db.teacherProfile.findMany({
     where: {
       user: { banned: false },
       services: { some: lessons },
       ...(style ? { styles: { contains: `"${style}"` } } : {}),
+      // Personalised feed: only teachers who teach one of the student's styles.
+      ...(onlyStyles?.length ? { OR: onlyStyles.map((st) => ({ styles: { contains: `"${st}"` } })) } : {}),
     },
     include: {
       user: { select: { name: true } },

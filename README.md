@@ -55,17 +55,35 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
    **Migrations run automatically on every Vercel build** (`vercel-build` → `prisma/migrate.ts`): new columns are added to Turso before the new code goes live, existing data is kept, and if a migration fails the build fails and the previous deployment stays up. Run `pnpm db:migrate` to do the same by hand. `pnpm prisma db seed` is only for (re)loading the demo data, and it wipes the database.
 4. **Check the deployment:** sign in as `admin@grooveup.dev`. The **Setup** card on `/admin` shows the database, whether migrations are up to date, and whether Mux uploads and signed playback are configured (it only shows whether each is set, never the values).
 
-## Access requests & chat (payments outside the app)
+## Access requests, approvals & chat
 
-Until a payment gateway is added, students pay teachers directly by UPI:
+Until in-app payments launch, access is granted by hand:
 
-1. On a course or paid lesson the student taps **Request access**. They see the teacher's UPI ID, an optional QR code (generated on the fly from a `upi://pay` link with the amount filled in; nothing is uploaded) and **Open UPI app** on phones. They can add their UPI transaction ID and a note.
-2. The teacher sees it in **Studio → Requests** (searchable by student, lesson or UPI reference) and approves it, choosing how long access lasts: no expiry, 1–3 months or a custom number of days. Or they decline it with an optional reason. Approving records a `UPI` order, so earnings stay accurate. Teachers can end access early.
-3. Every request, approval and decline also appears as a note in that student and teacher's chat.
+1. On a course or paid lesson the student taps **Request access** (with an optional note).
+2. The **teacher** (Studio → Requests, searchable) or an **admin** (Admin → Requests) approves it, choosing how long access lasts: no expiry, 1–3 months or a custom number of days. Or they decline it with an optional reason. Admin decisions are audit-logged and appear in the chat as "by Groove up". Access can be ended early.
+3. Every request, approval and decline also shows up as a note in that student's chat with the teacher.
 
-**Chat:** students message any teacher from the teacher's page or a lesson page. Teachers reply in **Studio → Inbox** (searchable by name or message text, with an Unread filter). Students find their conversations in **My Floor → Inbox** and their requests in **My Floor → Requests**. New messages arrive by polling every 4 s while the chat is open, so no websockets are needed on Vercel.
+**Payments later:** `lib/payments.ts` holds the plan: a `PaymentProvider` (Razorpay, then Stripe) whose confirmed payment calls `grantAccess()` from `lib/grant.ts` (the same unlock the manual approval uses). `PLATFORM_FEE_PERCENT` (10%) splits each payment between teacher and platform.
 
-Teachers set their UPI ID, QR visibility and monthly course price in **Studio → Requests → Payment details**.
+**Chat:** students message any teacher from the teacher's page or a lesson page. Teachers reply in **Studio → Inbox**; students use **My Floor → Inbox**. It's searchable, has an Unread filter, and polls every 4 s while open, so there are no websockets on Vercel.
+
+## Lessons: tags and previews
+
+- **Tags:** every lesson needs at least 3 (up to 10), with suggestions per style. They're lowercase and dash-separated, for example `party-steps`, and shown on the lesson page.
+- **Preview:** in the lesson form the teacher plays their own video and picks the public preview (3–30 s) with *Start here* and length sliders. It plays from the local file right after picking it, so there's no wait for the upload.
+  - For Mux lessons, Mux cuts the range into a **separate clip asset** (`mux://assets/<id>` with start and end times), so a locked lesson page never receives the full video.
+  - For pasted MP4 links, the preview plays that link limited to the range. That isn't protected, since the link itself is public.
+
+## Student onboarding & personalised feed
+
+New students pick the dance styles they want (and optionally a level) at **/welcome**. Explore and the home page then show only those styles: a hip-hop fan isn't shown Bharatanatyam. A bar on Explore offers **Edit** and **Show all styles**. Students who skipped it are sent back to /welcome when they sign in.
+
+## Practice player
+
+Speed (0.5×/0.75×/1×), mirror, sections, **A–B loop** and **loop a section**, with a **pause between repeats** (default 3 s, shown as a countdown; tap to skip; remembered per device). Also **full screen**, which covers the whole player so the loop controls stay usable, and **Cast to TV**:
+- Chromecast / Google TV via Google's Cast SDK in Chrome and Edge. The TV streams the signed link itself.
+- AirPlay in Safari.
+- The Remote Playback API elsewhere. The button is hidden when none of these is available.
 
 ## Deployments (branches, previews, production)
 
@@ -113,7 +131,7 @@ Without these variables the Upload button is hidden and lessons use pasted MP4 l
 | Email | Role | Notes |
 | --- | --- | --- |
 | `teacher@grooveup.dev` | TEACHER | Kabir Rao, hip-hop, **verified** |
-| `student@grooveup.dev` | STUDENT | Riya: one free demo in progress, a pending request for Kabir's course and a chat with him |
+| `student@grooveup.dev` | STUDENT | Riya: likes Hip-Hop and K-Pop, one free demo in progress, a pending request for Kabir's course and a chat with him |
 | `admin@grooveup.dev` | ADMIN | the only admin |
 | `arjun@grooveup.dev` | STUDENT | in Ananya's course, bought one lesson from Min-ji, has a pending request for Diego's lesson and two chats |
 | `ananya@` / `minji@` / `diego@grooveup.dev` | TEACHER | Bharatanatyam (**featured**), K-Pop, salsa |

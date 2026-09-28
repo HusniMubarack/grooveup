@@ -7,6 +7,9 @@ import { createServiceAction, updateServiceAction, type FormState } from "@/app/
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { VideoUpload } from "@/components/video-upload";
+import { TagInput } from "@/components/tag-input";
+import { PreviewPicker } from "@/components/preview-picker";
+import { parseTags } from "@/lib/tags";
 import { MAX_SECTIONS, TYPE_LABELS } from "@/lib/categories";
 import { LEVELS, STYLES, TYPES } from "@/lib/utils";
 
@@ -31,17 +34,18 @@ function initialValues(s?: Service & { sections: ServiceSection[] }, muxEnabled?
     return {
       type: "STEP", level: "BEGINNER", style: "Hip-Hop", durationMin: "1", durationSec: "0", priceRupees: "0",
       // With Mux, teachers upload instead of pasting links.
-      teaserUrl: muxEnabled ? "" : `${SAMPLE}/ForBiggerBlazes.mp4`,
       videoUrl: muxEnabled ? "" : `${SAMPLE}/ForBiggerFun.mp4`,
       thumbnailUrl: muxEnabled ? "" : `${SAMPLE}/images/ForBiggerFun.jpg`,
-      includedInSub: "on", published: "on",
+      includedInSub: "on", published: "on", tags: "[]",
       s1label: "Breakdown", s1start: "0", s1end: "30", s2label: "Full speed", s2start: "30", s2end: "60",
     };
   const v: Initial = {
     title: s.title, type: s.type, level: s.level, style: s.style, description: s.description,
     durationMin: String(Math.floor(s.durationSec / 60)), durationSec: String(s.durationSec % 60),
     teaserUrl: s.teaserUrl, videoUrl: s.videoUrl, thumbnailUrl: s.thumbnailUrl,
-    priceRupees: String(s.pricePaise / 100), muxUploadId: s.muxUploadId ?? "",
+    priceRupees: String(s.pricePaise / 100), muxUploadId: s.muxUploadId ?? "", tags: s.tags,
+    previewStart: s.previewStartSec == null ? "" : String(s.previewStartSec),
+    previewEnd: s.previewEndSec == null ? "" : String(s.previewEndSec),
   };
   if (s.includedInSub) v.includedInSub = "on";
   if (s.isFree) v.isFree = "on";
@@ -56,20 +60,30 @@ function initialValues(s?: Service & { sections: ServiceSection[] }, muxEnabled?
 
 const sectionCount = (v: Initial) => Math.max(1, ...Array.from({ length: MAX_SECTIONS }, (_, i) => (v[`s${i + 1}label`] ? i + 1 : 0)));
 
-export function ServiceForm({ service, muxEnabled }: { service?: Service & { sections: ServiceSection[] }; muxEnabled: boolean }) {
+export function ServiceForm({ service, muxEnabled, currentVideoSrc }: {
+  service?: Service & { sections: ServiceSection[] }; muxEnabled: boolean;
+  /** When editing: a playable URL of the lesson's video for the preview picker (signed stream for Mux). */
+  currentVideoSrc?: string | null;
+}) {
   const submit = service ? updateServiceAction.bind(null, service.id) : createServiceAction;
   const [state, action, pending] = useActionState<FormState, FormData>(submit, undefined);
   // After a validation error React resets the form; the sent values (or the lesson) become the defaults.
   const values = state?.values ?? initialValues(service, muxEnabled);
-  return <FormBody key={JSON.stringify(values)} values={values} action={action} pending={pending} error={state?.error} service={service} muxEnabled={muxEnabled} />;
+  return <FormBody key={JSON.stringify(values)} values={values} action={action} pending={pending} error={state?.error} service={service} muxEnabled={muxEnabled} currentVideoSrc={currentVideoSrc} />;
 }
 
-function FormBody({ values, action, pending, error, service, muxEnabled }: {
+function FormBody({ values, action, pending, error, service, muxEnabled, currentVideoSrc }: {
   values: Initial; action: (f: FormData) => void; pending: boolean; error?: string;
-  service?: Service; muxEnabled: boolean;
+  service?: Service; muxEnabled: boolean; currentVideoSrc?: string | null;
 }) {
   const v = (name: string) => values[name] ?? "";
   const [rows, setRows] = useState(sectionCount(values));
+  const [style, setStyle] = useState(v("style"));
+  const [localFile, setLocalFile] = useState<string | null>(null);
+  const [pasted, setPasted] = useState(v("videoUrl"));
+  // Preview picker source: a just-picked file, else the pasted link, else the lesson's current video.
+  const pickerSrc = localFile ?? (/^https?:\/\//.test(pasted) ? pasted : null) ?? currentVideoSrc ?? null;
+  const num = (k: string) => (values[k] === undefined || values[k] === "" ? null : Number(values[k]));
   const usesMux = muxEnabled || !!service?.muxUploadId;
 
   return (
@@ -78,7 +92,7 @@ function FormBody({ values, action, pending, error, service, muxEnabled }: {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Type"><Select name="type" defaultValue={v("type")}>{TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}</Select></Field>
         <Field label="Level"><Select name="level" defaultValue={v("level")}>{LEVELS.map((l) => <option key={l}>{l}</option>)}</Select></Field>
-        <Field label="Style"><Select name="style" defaultValue={v("style")}>{STYLES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="Style"><Select name="style" defaultValue={v("style")} onChange={(e) => setStyle(e.target.value)}>{STYLES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
         <Field label="Duration (min : sec)">
           <div className="grid grid-cols-2 gap-2">
             <Input name="durationMin" type="number" min={0} max={20} defaultValue={v("durationMin")} aria-label="Minutes" />
@@ -87,14 +101,19 @@ function FormBody({ values, action, pending, error, service, muxEnabled }: {
         </Field>
       </div>
       <Field label="Description"><Textarea name="description" placeholder="What will students be able to do after this lesson?" defaultValue={v("description")} /></Field>
+      <Field label="Tags (at least 3)"><TagInput initial={parseTags(values.tags)} style={style} /></Field>
 
       {usesMux && (
         <Field label="Lesson video">
-          <VideoUpload initialUploadId={v("muxUploadId") || null} status={service?.videoStatus} />
+          <VideoUpload initialUploadId={v("muxUploadId") || null} status={service?.videoStatus} onFile={(f) => setLocalFile(URL.createObjectURL(f))} />
         </Field>
       )}
-      <Field label={usesMux ? "…or paste a video link (MP4)" : "Video URL (MP4)"}><Input name="videoUrl" type="url" defaultValue={v("videoUrl")} /></Field>
-      <Field label="Teaser URL (MP4, optional)"><Input name="teaserUrl" type="url" defaultValue={v("teaserUrl")} /></Field>
+      <Field label={usesMux ? "…or paste a video link (MP4)" : "Video URL (MP4)"}>
+        <Input name="videoUrl" type="url" defaultValue={v("videoUrl")} onChange={(e) => { setPasted(e.target.value); setLocalFile(null); }} />
+      </Field>
+      <Field label="Preview (what students see before unlocking, max 30 s)">
+        <PreviewPicker src={pickerSrc} initialStart={num("previewStart")} initialEnd={num("previewEnd")} />
+      </Field>
       <Field label="Thumbnail URL (optional)"><Input name="thumbnailUrl" type="url" defaultValue={v("thumbnailUrl")} /></Field>
       <Field label="Price (₹, one-time; 0 = not sold separately)"><Input name="priceRupees" type="number" min={0} step={1} defaultValue={v("priceRupees")} /></Field>
       <div className="grid gap-2">

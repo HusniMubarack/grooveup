@@ -2,6 +2,8 @@ import Link from "next/link";
 import { BadgeCheck, Sparkles } from "lucide-react";
 import { publicServiceWhere } from "@/lib/access";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/auth";
+import { feedStyles } from "@/lib/prefs";
 import { parseStyles, rupees } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LogoMark } from "@/components/logo";
@@ -9,10 +11,15 @@ import { Placeholder } from "@/components/placeholder";
 import { ServiceCard } from "@/components/service-card";
 
 export default async function Landing() {
+  // Signed-in students see only the styles they picked.
+  const only = await feedStyles(await currentUser());
   const [featuredTeachers, featuredServices] = await Promise.all([
-    db.teacherProfile.findMany({ where: { featured: true, user: { banned: false } }, include: { user: true } }),
+    db.teacherProfile.findMany({
+      where: { featured: true, user: { banned: false }, ...(only ? { OR: only.map((st) => ({ styles: { contains: `"${st}"` } })) } : {}) },
+      include: { user: true },
+    }),
     db.service.findMany({
-      where: { ...publicServiceWhere, OR: [{ featured: true }, { isFree: true }] },
+      where: { ...publicServiceWhere, OR: [{ featured: true }, { isFree: true }], ...(only ? { style: { in: only } } : {}) },
       include: { teacher: { include: { user: true } } },
       orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
       take: 4,

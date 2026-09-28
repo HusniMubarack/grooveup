@@ -22,7 +22,7 @@ export default async function AdminCommerce() {
             { h: "Date", cell: (o) => fmtDate(o.createdAt), className: "whitespace-nowrap" },
             { h: "Student", cell: (o) => o.student.email },
             { h: "Type", cell: (o) => o.type },
-            { h: "Paid via", cell: (o) => (o.method === "UPI" ? "UPI (teacher-approved)" : "Mock checkout") },
+            { h: "How", cell: (o) => ({ MANUAL: "Approved request", UPI: "UPI (teacher-approved)", MOCK: "Mock checkout" })[o.method] ?? o.method },
             { h: "Amount", cell: (o) => rupees(o.amountPaise) },
             {
               h: "Teacher / service",

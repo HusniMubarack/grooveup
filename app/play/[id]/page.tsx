@@ -41,6 +41,7 @@ export default async function PlayPage({ params }: { params: Promise<{ id: strin
       <Player
         serviceId={s.id}
         src={src}
+        title={s.title}
         poster={thumbSrc(video) || undefined}
         sections={s.sections}
         startAt={progress && !progress.completed ? progress.lastSec : 0}

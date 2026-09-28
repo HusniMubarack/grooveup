@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
  * Sends the teacher's file straight from the browser to Mux (resumable 5 MB chunks), so videos never
  * touch our server. The resulting upload id rides along with the lesson form in a hidden input.
  */
-export function VideoUpload({ initialUploadId, status }: { initialUploadId?: string | null; status?: string | null }) {
+export function VideoUpload({ initialUploadId, status, onFile }: { initialUploadId?: string | null; status?: string | null; onFile?: (f: File) => void }) {
   const [uploadId, setUploadId] = useState(initialUploadId ?? "");
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export function VideoUpload({ initialUploadId, status }: { initialUploadId?: str
         type="file"
         accept="video/*"
         hidden
-        onChange={(e) => e.target.files?.[0] && start(e.target.files[0])}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) { onFile?.(f); start(f); } }}
       />
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" disabled={progress !== null} onClick={() => input.current?.click()}>

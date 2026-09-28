@@ -68,6 +68,8 @@ model User {
   role         Role     @default(STUDENT)
   banned       Boolean  @default(false)
   createdAt    DateTime @default(now())
+  /// Student onboarding: JSON {"styles": string[], "level"?: string}; "" until chosen
+  danceStyles  String   @default("")
 
   teacherProfile  TeacherProfile?
   follows         Follow[]
@@ -94,9 +96,6 @@ model TeacherProfile {
   monthlyPricePaise Int      @default(49900)
   verified          Boolean  @default(false)
   featured          Boolean  @default(false)
-  /// Payment details shown to students when they request access (paid outside the app).
-  upiId             String?
-  showUpiQr         Boolean  @default(true)
 
   services       Service[]
   followers      Follow[]
@@ -132,6 +131,16 @@ model Service {
   muxAssetId         String?
   muxPlaybackId      String?
   videoStatus        String?        /// processing | ready | errored
+  /// JSON-encoded string[]; at least 3 required when saving from the Studio
+  tags               String         @default("[]")
+  /// Teacher-picked preview range of the main video (≤ 30 s)
+  previewStartSec    Int?
+  previewEndSec      Int?
+  /// Mux clip cut from the main asset for that range ("start-end" it was cut from)
+  previewAssetId     String?
+  previewPlaybackId  String?
+  previewStatus      String?
+  previewRange       String?
 
   sections       ServiceSection[]
   entitlements   Entitlement[]

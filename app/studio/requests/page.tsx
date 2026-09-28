@@ -4,10 +4,9 @@ import type { Prisma, RequestStatus } from "@prisma/client";
 import { declineRequestAction, endAccessAction } from "@/app/request-actions";
 import { ensureTeacherProfile, requireTeacher } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { upiLink, upiQrSvg } from "@/lib/requests";
 import { cn, fmtUntil, rupees, timeAgo } from "@/lib/utils";
 import { ApproveForm } from "@/components/approve-form";
-import { PaymentDetailsForm } from "@/components/payment-details-form";
+import { CoursePriceForm } from "@/components/course-price-form";
 import { Badge } from "@/components/ui/badge";
 
 const STATUSES = ["PENDING", "APPROVED", "DECLINED", "ALL"] as const;
@@ -27,7 +26,6 @@ export default async function StudioRequests({ searchParams }: { searchParams: P
       { student: { name: { contains: q } } },
       { student: { email: { contains: q } } },
       { service: { title: { contains: q } } },
-      { paymentRef: { contains: q } },
       ...("course".includes(q.toLowerCase()) ? [{ serviceId: null }] : []),
     ];
 
@@ -47,26 +45,16 @@ export default async function StudioRequests({ searchParams }: { searchParams: P
   const grants = status === "APPROVED"
     ? await db.entitlement.findMany({ where: { teacherId: t.id, source: "PURCHASE", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, select: { id: true, userId: true, serviceId: true } })
     : [];
-  const link = upiLink(t, user.name, t.monthlyPricePaise, "course");
-  const qr = link && t.showUpiQr ? await upiQrSvg(link) : null;
   const href = (s: string) => `/studio/requests?${new URLSearchParams({ ...(q ? { q } : {}), status: s })}`;
 
   return (
     <div className="space-y-4">
-      <details className="rounded-xl border bg-card" open={!t.upiId}>
-        <summary className="cursor-pointer list-none p-3 text-sm font-medium">
-          Payment details{" "}
-          <span className="font-normal text-muted-foreground">· {t.upiId ? `${t.upiId}${t.showUpiQr ? " · QR on" : ""}` : "add your UPI ID so students can pay you"}</span>
-        </summary>
-        <div className="border-t p-3">
-          <PaymentDetailsForm upiId={t.upiId ?? ""} showUpiQr={t.showUpiQr} coursePrice={t.monthlyPricePaise / 100} qrSvg={qr} />
-        </div>
-      </details>
+      <CoursePriceForm rupeesPerMonth={t.monthlyPricePaise / 100} />
 
       <div className="flex flex-wrap items-center gap-2">
         <form className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-card px-2" action="/studio/requests">
           <Search className="size-4 shrink-0 text-muted-foreground" />
-          <input name="q" defaultValue={q} placeholder="Search student, lesson or UPI ref" className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+          <input name="q" defaultValue={q} placeholder="Search student or lesson" className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none" />
           <input type="hidden" name="status" value={status} />
         </form>
         <div className="flex gap-1 text-xs">
@@ -97,7 +85,6 @@ export default async function StudioRequests({ searchParams }: { searchParams: P
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {timeAgo(r.createdAt)}
-                      {r.paymentRef && <> · UPI ref <span className="font-mono text-foreground">{r.paymentRef}</span></>}
                     </p>
                     {r.note && <p className="mt-1 text-xs italic text-muted-foreground">“{r.note}”</p>}
                   </div>

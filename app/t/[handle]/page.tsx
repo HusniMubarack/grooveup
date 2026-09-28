@@ -10,7 +10,7 @@ import { fmtDuration, fmtUntil, parseStyles, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RequestAccess } from "@/components/request-access";
-import { requestPanel } from "@/lib/request-panel";
+import { requestPanel } from "@/lib/requests";
 import { startChatAction } from "@/app/chat-actions";
 import { Placeholder } from "@/components/placeholder";
 import { ReportButton } from "@/components/report-button";
@@ -40,7 +40,7 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
   const style = parseStyles(t.styles)[0] ?? "Dance";
   const courseLessons = services.filter((s) => s.includedInSub);
   const courseReq = user && !isOwner && !sub && courseLessons.length > 0
-    ? await requestPanel(user.id, t, t.user.name, null, t.monthlyPricePaise, `${style} course`)
+    ? await requestPanel(user.id, t.id, null)
     : null;
 
   return (
@@ -66,7 +66,7 @@ export default async function TeacherPage({ params }: { params: Promise<{ handle
             {sub ? (
               <p className="rounded-md border border-primary/40 p-2 text-center text-sm text-primary">In the course · access {sub.currentPeriodEnd ? `until ${fmtUntil(sub.currentPeriodEnd)}` : "with no expiry"}</p>
             ) : courseReq ? (
-              <RequestAccess teacherId={t.id} teacherName={t.user.name} amountPaise={t.monthlyPricePaise} label="Join the course" upi={courseReq.upi} pending={courseReq.pending} />
+              <RequestAccess teacherId={t.id} teacherName={t.user.name} amountPaise={t.monthlyPricePaise} label="Join the course" pending={courseReq.pending} />
             ) : !user && courseLessons.length > 0 ? (
               <Button asChild><Link href={`/login?next=/t/${t.handle}`}>Sign in to join the course</Link></Button>
             ) : null}

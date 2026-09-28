@@ -8,10 +8,12 @@ import { redirect } from "next/navigation";
 import type { Level, Prisma, Role, ServiceType } from "@prisma/client";
 import { currentUser, ensureTeacherProfile, isTeacher, requireTeacher, requireUser, signIn, signOut } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { durationError, MAX_SECTIONS } from "@/lib/categories";
+import { durationError, MAX_PREVIEW_SEC, MAX_SECTIONS } from "@/lib/categories";
+import { parsePrefs } from "@/lib/prefs";
+import { cleanTags, MIN_TAGS } from "@/lib/tags";
 import { deleteBlocker } from "@/lib/lessons";
 import { createDirectUpload, deleteMuxAsset, muxEnabled, muxUploadBelongsTo } from "@/lib/mux";
-import { LEVELS, TYPES } from "@/lib/utils";
+import { LEVELS, STYLES, TYPES } from "@/lib/utils";
 
 export type FormState = { error?: string; ok?: string; values?: Record<string, string> } | undefined;
 
@@ -32,9 +34,10 @@ export async function loginAction(_: FormState, f: FormData): Promise<FormState>
   // Land by role unless we were sent here from a protected page.
   let redirectTo = next ? safeNext(next) : "/explore";
   if (!next) {
-    const u = await db.user.findUnique({ where: { email }, select: { role: true } });
+    const u = await db.user.findUnique({ where: { email }, select: { role: true, danceStyles: true } });
     if (u?.role === "ADMIN") redirectTo = "/admin";
     if (u?.role === "TEACHER" || u?.role === "BOTH") redirectTo = "/studio";
+    if (u?.role === "STUDENT" && !parsePrefs(u.danceStyles)) redirectTo = "/welcome";
   }
   try {
     await signIn("credentials", { email, password: str(f, "password"), redirectTo });
@@ -62,7 +65,21 @@ export async function registerAction(_: FormState, f: FormData): Promise<FormSta
   if (isTeacher(role)) await ensureTeacherProfile(user.id, name);
   if (role === "BOTH") (await cookies()).set("grooveup-mode", "teacher", { path: "/", sameSite: "lax" });
 
-  await signIn("credentials", { email, password, redirectTo: isTeacher(role) ? "/studio" : "/explore" });
+  await signIn("credentials", { email, password, redirectTo: role === "TEACHER" ? "/studio" : role === "BOTH" ? "/welcome?next=/studio" : "/welcome" });
+}
+
+/** Onboarding: the dance styles (and optional level) a student's feed is built from. */
+export async function saveDanceStylesAction(_: FormState, f: FormData): Promise<FormState> {
+  const u = await requireUser("/welcome");
+  const styles = f.getAll("style").map(String).filter((s) => STYLES.includes(s));
+  if (styles.length === 0) return { error: "Pick at least one style." };
+  const level = str(f, "level");
+  await db.user.update({
+    where: { id: u.id },
+    data: { danceStyles: JSON.stringify({ styles, ...(LEVELS.includes(level as Level) ? { level } : {}) }) },
+  });
+  revalidatePath("/", "layout");
+  redirect(safeNext(str(f, "next") || "/explore"));
 }
 
 export async function logoutAction() {
@@ -133,7 +150,8 @@ export async function reportAction(_: FormState, f: FormData): Promise<FormState
 
 // ---------- teacher ----------
 
-type ServiceInput = Omit<Prisma.ServiceUncheckedCreateInput, "teacherId" | "sections"> & {
+type ServiceInput = Omit<Prisma.ServiceUncheckedCreateInput, "teacherId" | "sections" | "teaserUrl"> & {
+  teaserUrl?: string;
   sections: { label: string; startSec: number; endSec: number }[];
 };
 
@@ -167,6 +185,21 @@ async function parseServiceForm(f: FormData, teacherId: string, existing?: { mux
     .filter((sec) => sec.label);
   if (sections.some((sec) => sec.endSec <= sec.startSec)) return "Each section must end after it starts.";
 
+  let rawTags: string[] = [];
+  try { rawTags = JSON.parse(str(f, "tags") || "[]"); } catch { /* treated as none */ }
+  const tags = cleanTags(Array.isArray(rawTags) ? rawTags.map(String) : []);
+  if (tags.length < MIN_TAGS) return `Add at least ${MIN_TAGS} tags so students can find this lesson.`;
+
+  // Teacher-picked preview: up to 30 s of the main video.
+  const pStart = str(f, "previewStart"), pEnd = str(f, "previewEnd");
+  const previewStartSec = pStart === "" ? null : Math.max(0, Math.floor(Number(pStart) || 0));
+  const previewEndSec = pEnd === "" ? null : Math.floor(Number(pEnd) || 0);
+  if (previewStartSec !== null || previewEndSec !== null) {
+    if (previewStartSec === null || previewEndSec === null || previewEndSec <= previewStartSec) return "The preview must end after it starts.";
+    if (previewEndSec - previewStartSec > MAX_PREVIEW_SEC) return `Keep the preview to ${MAX_PREVIEW_SEC} seconds or less.`;
+    if (durationSec && previewEndSec > durationSec + 1) return "The preview must be inside the video.";
+  }
+
   return {
     title,
     type,
@@ -174,14 +207,20 @@ async function parseServiceForm(f: FormData, teacherId: string, existing?: { mux
     style: str(f, "style") || "Hip-Hop",
     description: str(f, "description"),
     durationSec,
-    teaserUrl,
+    // The teaser link field is gone from the form (teachers pick a preview range instead); keep old values.
+    ...(f.has("teaserUrl") ? { teaserUrl } : {}),
     videoUrl,
     thumbnailUrl: str(f, "thumbnailUrl"),
     pricePaise,
     includedInSub,
     isFree,
     published: f.get("published") === "on",
-    ...(newUpload ? { muxUploadId, muxAssetId: null, muxPlaybackId: null, videoStatus: "processing" } : {}),
+    tags: JSON.stringify(tags),
+    previewStartSec,
+    previewEndSec,
+    ...(newUpload
+      ? { muxUploadId, muxAssetId: null, muxPlaybackId: null, videoStatus: "processing", previewAssetId: null, previewPlaybackId: null, previewStatus: null, previewRange: null }
+      : {}),
     sections,
   };
 }
@@ -211,7 +250,7 @@ export async function createServiceAction(_: FormState, f: FormData): Promise<Fo
   if (typeof data === "string") return fail(f, data);
 
   const { sections, ...fields } = data;
-  const created = await db.service.create({ data: { ...fields, teacherId: profile.id, sections: { create: sections } } });
+  const created = await db.service.create({ data: { ...fields, teaserUrl: fields.teaserUrl ?? "", teacherId: profile.id, sections: { create: sections } } });
   // Existing subscribers get the new included lesson on their floor.
   if (created.includedInSub) await syncSubEntitlements(created.id, profile.id, true);
   revalidatePath("/", "layout");
@@ -231,7 +270,11 @@ export async function updateServiceAction(id: string, _: FormState, f: FormData)
     db.serviceSection.deleteMany({ where: { serviceId: id } }),
     db.service.update({ where: { id }, data: { ...fields, sections: { create: sections } } }),
   ]);
-  if (fields.muxUploadId && s.muxAssetId) await deleteMuxAsset(s.muxAssetId); // replaced video
+  if (fields.muxUploadId && s.muxAssetId) {
+    // Replaced video: its old asset and preview clip go too.
+    await deleteMuxAsset(s.muxAssetId);
+    await deleteMuxAsset(s.previewAssetId);
+  }
   if (fields.includedInSub !== s.includedInSub) await syncSubEntitlements(id, s.teacherId, !!fields.includedInSub);
   revalidatePath("/", "layout");
   redirect("/studio");
@@ -244,6 +287,7 @@ export async function deleteServiceAction(id: string): Promise<FormState> {
   if (blocker) return { error: blocker };
   await db.service.delete({ where: { id } });
   await deleteMuxAsset(s.muxAssetId);
+  await deleteMuxAsset(s.previewAssetId);
   revalidatePath("/", "layout");
   redirect("/studio");
 }

@@ -9,11 +9,14 @@ import { fmtDuration, parseStyles, rupees } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RequestAccess } from "@/components/request-access";
-import { requestPanel } from "@/lib/request-panel";
+import { requestPanel } from "@/lib/requests";
 import { startChatAction } from "@/app/chat-actions";
 import { Placeholder } from "@/components/placeholder";
 import { ReportButton } from "@/components/report-button";
 import { ServiceCard, Thumb, thumbSrc } from "@/components/service-card";
+import { PreviewPlayer } from "@/components/preview-player";
+import { parseTags } from "@/lib/tags";
+import { muxSigningEnabled, signedStreamUrl, syncMuxVideo } from "@/lib/mux";
 
 export default async function ServicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,12 +49,21 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     }),
   ]);
   const back = `/s/${s.id}`;
+  // Preview: the Mux clip if it's ready, else the chosen range of a pasted link (never the full Mux video).
+  const synced = await syncMuxVideo(s);
+  const hasRange = synced.previewStartSec != null && synced.previewEndSec != null;
+  const previewSrc =
+    synced.previewPlaybackId && synced.previewStatus === "ready" && muxSigningEnabled()
+      ? { src: await signedStreamUrl(synced.previewPlaybackId), start: null, end: null }
+      : !synced.muxUploadId && hasRange && s.videoUrl
+        ? { src: s.videoUrl, start: synced.previewStartSec, end: synced.previewEndSec }
+        : null;
   // Request panels (only for signed-in students without access).
   const needsRequest = !!user && !unlocked && !isOwner && !isAdmin;
   const [lessonReq, courseReq] = needsRequest
     ? await Promise.all([
-        s.pricePaise > 0 ? requestPanel(user!.id, s.teacher, s.teacher.user.name, s.id, s.pricePaise, s.title) : null,
-        s.includedInSub ? requestPanel(user!.id, s.teacher, s.teacher.user.name, null, s.teacher.monthlyPricePaise, `${s.style} course`) : null,
+        s.pricePaise > 0 ? requestPanel(user!.id, s.teacherId, s.id) : null,
+        s.includedInSub ? requestPanel(user!.id, s.teacherId, null) : null,
       ])
     : [null, null];
 
@@ -65,8 +77,10 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
       )}
 
       <div className="relative overflow-hidden rounded-lg border bg-black">
-        {/* Locked or not, this page only ever shows the teaser. */}
-        {s.teaserUrl ? (
+        {/* Locked or not, this page only ever shows the preview (for Mux lessons: a separately cut clip). */}
+        {previewSrc ? (
+          <PreviewPlayer src={previewSrc.src} start={previewSrc.start} end={previewSrc.end} poster={thumbSrc(s) || undefined} />
+        ) : s.teaserUrl ? (
           <video src={s.teaserUrl} poster={thumbSrc(s) || undefined} controls playsInline className="aspect-video w-full" />
         ) : s.muxPlaybackId ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed Mux preview via redirect
@@ -76,7 +90,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
         )}
         {!unlocked && (
           <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-xs text-primary">
-            <Lock className="size-3" /> Teaser
+            <Lock className="size-3" /> Preview
           </span>
         )}
       </div>
@@ -90,6 +104,11 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             <Badge variant="muted">{fmtDuration(s.durationSec)}</Badge>
           </div>
           <h1 className="font-serif text-3xl leading-tight">{s.title}</h1>
+          {parseTags(s.tags).length > 0 && (
+            <p className="flex flex-wrap gap-1.5">
+              {parseTags(s.tags).map((t) => <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">#{t}</span>)}
+            </p>
+          )}
           <Link href={`/t/${s.teacher.handle}`} className="flex items-center gap-1 text-sm text-primary">
             {s.teacher.user.name} {s.teacher.verified && <BadgeCheck className="size-4" />}
           </Link>
@@ -119,13 +138,13 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
               {s.pricePaise > 0 && lessonReq && (
                 <RequestAccess
                   teacherId={s.teacherId} teacherName={s.teacher.user.name} serviceId={s.id} amountPaise={s.pricePaise}
-                  label="Request this lesson" upi={lessonReq.upi} pending={lessonReq.pending}
+                  label="Request this lesson" pending={lessonReq.pending}
                 />
               )}
               {s.includedInSub && courseReq && (
                 <RequestAccess
                   teacherId={s.teacherId} teacherName={s.teacher.user.name} amountPaise={s.teacher.monthlyPricePaise}
-                  label={`Join ${s.teacher.user.name.split(" ")[0]}'s course`} upi={courseReq.upi} pending={courseReq.pending}
+                  label={`Join ${s.teacher.user.name.split(" ")[0]}'s course`} pending={courseReq.pending}
                 />
               )}
               <p className="text-center text-xs text-muted-foreground">
@@ -142,8 +161,8 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
             <p className="text-center text-xs text-muted-foreground">{isAdmin ? "Admin preview access" : "You own this lesson"}</p>
           )}
           <Placeholder title="In-app payments">
-            A payment gateway (Razorpay first, then Stripe) will replace paying the teacher directly, with automatic unlocks,
-            a 10% platform fee and scheduled payouts. Today students pay by UPI and the teacher approves the request.
+            Pay right here (Razorpay first, then Stripe) and the lesson unlocks instantly. Each payment is split between the
+            teacher and the platform. Until then, your teacher or the Groove up team approves requests.
           </Placeholder>
           <Placeholder title="Tips & promo codes" action="Apply code">
             Students can tip a teacher after a lesson and apply teacher-issued promo codes at checkout.
