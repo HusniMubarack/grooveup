@@ -20,16 +20,17 @@ export const thumbSrc = (s: ThumbFields) => (s.muxPlaybackId ? `/api/thumb/${s.i
 
 export function Thumb({ s, className, locked }: { s: ThumbFields; className?: string; locked?: boolean }) {
   return (
-    <div
-      className={cn("relative aspect-video overflow-hidden rounded-md bg-cover bg-center", className)}
-      style={{ backgroundImage: `url(${thumbSrc(s)}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
-    >
+    <div className={cn("relative aspect-video overflow-hidden rounded-md bg-[#15110a]", className)}>
+      <div
+        className="tilt-zoom absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${thumbSrc(s)}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
+      />
       {locked && (
-        <span className="absolute right-2 top-2 rounded-full bg-black/70 p-1.5 text-primary">
+        <span className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-primary backdrop-blur-md">
           <Lock className="size-3.5" />
         </span>
       )}
-      <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 text-[11px]">{fmtDuration(s.durationSec)}</span>
+      <span className="absolute bottom-2 right-2 rounded-full bg-black/50 px-2 py-0.5 text-[11px] backdrop-blur-md">{fmtDuration(s.durationSec)}</span>
     </div>
   );
 }
@@ -38,7 +39,7 @@ export function Thumb({ s, className, locked }: { s: ThumbFields; className?: st
 export function ServiceCard({ s, className }: { s: CardService; className?: string }) {
   const free = s.isFree || s.type === "DEMO";
   return (
-    <Link href={`/s/${s.id}`} className={cn("group block", className)}>
+    <Link href={`/s/${s.id}`} className={cn("tilt group block", className)}>
       <Thumb s={s} locked={!free} className={cn(s.featured && "ring-1 ring-primary/70")} />
       <h3 className="mt-2 line-clamp-2 text-sm font-medium leading-snug group-hover:text-primary">
         {s.featured && <Star className="mr-1 inline size-3.5 fill-primary text-primary" aria-label="Featured" />}
@@ -66,11 +67,12 @@ export function CourseCard({ t, className }: { t: CourseTeacher; className?: str
   const first = t.user.name.split(" ")[0];
   const cover = t.services[0];
   return (
-    <Link href={`/t/${t.handle}`} className={cn("group block", className)}>
-      <div
-        className={cn("relative aspect-video overflow-hidden rounded-md bg-cover bg-center", t.featured && "ring-1 ring-primary/70")}
-        style={{ backgroundImage: `linear-gradient(to top, rgba(11,10,9,.9), rgba(11,10,9,.1)), url(${cover ? thumbSrc(cover) : ""}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
-      >
+    <Link href={`/t/${t.handle}`} className={cn("tilt group block", className)}>
+      <div className={cn("relative aspect-video overflow-hidden rounded-md bg-[#15110a]", t.featured && "ring-1 ring-primary/70")}>
+        <div
+          className="tilt-zoom absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `linear-gradient(to top, rgba(11,10,9,.9), rgba(11,10,9,.1)), url(${cover ? thumbSrc(cover) : ""}), linear-gradient(135deg, #3a2d0c, #0b0a09)` }}
+        />
         <span className="absolute bottom-2 left-2 text-xs text-primary">{t.services.length} lessons</span>
       </div>
       <h3 className="mt-2 text-sm font-medium leading-snug group-hover:text-primary">

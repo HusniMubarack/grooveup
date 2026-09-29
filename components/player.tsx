@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Cast, FlipHorizontal2, Maximize, Minimize, Pause, Play, Repeat } from "lucide-react";
 import { castMethod, castTo, isSafari, loadCastSdk, type CastSession } from "@/lib/cast";
+import { Dancer } from "@/components/dancer";
 import { savePracticeAction } from "@/app/actions";
 import { cn, fmtDuration } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ export function Player({ serviceId, src, poster, sections, startAt, title = "Gro
   const [loop, setLoopState] = useState<Loop>(null);
   const [markA, setMarkA] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [buffering, setBuffering] = useState(false);
   const hlsResume = useRef(false); // hls.js handles the resume position itself
   const setLoop = (l: Loop) => { loopRef.current = l; setLoopState(l); if (!l) stopCountdown(); };
 
@@ -234,6 +236,11 @@ export function Player({ serviceId, src, poster, sections, startAt, title = "Gro
   return (
     <div ref={root} className={cn("space-y-3", fullscreen && "flex h-full flex-col overflow-y-auto bg-background p-3")}>
       <div className={cn("relative overflow-hidden rounded-lg border bg-black", fullscreen && "flex min-h-0 flex-1 items-center")}>
+        {buffering && countdown === null && !error && (
+          <div className="pointer-events-none absolute inset-0 z-[5] grid place-items-center bg-black/30" aria-label="Buffering">
+            <Dancer size={56} />
+          </div>
+        )}
         {countdown !== null && (
           <button
             onClick={skipCountdown}
@@ -286,6 +293,10 @@ export function Player({ serviceId, src, poster, sections, startAt, title = "Gro
             const err = e.currentTarget.error;
             if (err && !hlsResume.current) setError(`The video couldn't load (${["", "aborted", "network error", "unsupported format", "source not supported"][err.code] ?? `code ${err.code}`}).`);
           }}
+          onWaiting={() => setBuffering(true)}
+          onStalled={() => setBuffering(true)}
+          onPlaying={() => setBuffering(false)}
+          onCanPlay={() => setBuffering(false)}
           onPlay={() => setPlaying(true)}
           onPause={() => { setPlaying(false); if (!counting.current) save(); }}
           onEnded={(e) => {

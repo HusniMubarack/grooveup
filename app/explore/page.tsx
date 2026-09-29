@@ -7,6 +7,7 @@ import { currentUser } from "@/lib/auth";
 import { feedStyles } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { CourseCard, ServiceCard } from "@/components/service-card";
+import { Dancer } from "@/components/dancer";
 
 const ICONS = { moves: Zap, choreo: Film, courses: BookOpen } as const;
 const ROW = 6;
@@ -19,11 +20,20 @@ const lessonQuery = (cat: "moves" | "choreo", style?: string, take?: number, onl
     take,
   });
 
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 [&>*]:w-40 [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-52">{children}</div>;
+/** Wraps each card so it "steps in" (see .step-in in globals.css), staggered by position. */
+const stepIn = (nodes: React.ReactNode[]) =>
+  nodes.map((n, i) => <div key={i} className="step-in" style={{ "--i": i } as React.CSSProperties}>{n}</div>);
+
+function Row({ children }: { children: React.ReactNode[] }) {
+  return (
+    <div className="lean -mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 [&>*]:w-40 [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-52">
+      {stepIn(children)}
+    </div>
+  );
 }
-function Grid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-x-3 gap-y-5 md:grid-cols-3 lg:grid-cols-4">{children}</div>;
+function Grid({ children }: { children: React.ReactNode[] }) {
+  // overflow-x-clip: cards stepping in from the side must never widen the page.
+  return <div className="grid grid-cols-2 gap-x-3 gap-y-5 overflow-x-clip md:grid-cols-3 lg:grid-cols-4">{stepIn(children)}</div>;
 }
 
 export default async function Explore({ searchParams }: { searchParams: Promise<{ cat?: string; style?: string; all?: string }> }) {
@@ -40,25 +50,36 @@ export default async function Explore({ searchParams }: { searchParams: Promise<
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-2 sm:grid-cols-3">
-        {CATEGORY_KEYS.map((k) => {
+    <div className="space-y-7">
+      <div className="beat-bar" aria-hidden />
+      <header className="relative flex items-end justify-between gap-3 overflow-hidden pt-2">
+        <div>
+          <p className="rise text-[11px] uppercase tracking-[0.3em] text-primary">{user ? `Hey ${user.name.split(" ")[0]}` : "Groove up"}</p>
+          <h1 className="rise-t font-serif text-5xl leading-none tracking-tight sm:text-6xl">Explore</h1>
+        </div>
+        <Dancer size={44} className="-mb-1 shrink-0 opacity-90" />
+      </header>
+
+      <div className="grid gap-2.5 sm:grid-cols-3">
+        {CATEGORY_KEYS.map((k, i) => {
           const Icon = ICONS[k];
           const active = cat === k;
           return (
             <Link
               key={k}
               href={active ? "/explore" : `/explore?cat=${k}`}
+              style={{ "--d": i + 1 } as React.CSSProperties}
               className={cn(
-                "flex items-center gap-3 rounded-xl border p-3 transition-colors sm:flex-col sm:items-start sm:p-4",
+                `rise tilt motif motif-${k} group relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4 sm:min-h-36 sm:flex-col sm:items-start sm:justify-end`,
                 active ? "border-primary bg-primary/15" : "bg-card hover:border-primary/60",
               )}
             >
-              <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", active ? "bg-primary text-primary-foreground" : "bg-muted text-primary")}>
+              <span className="motif-art" aria-hidden />
+              <span className={cn("relative grid size-11 shrink-0 place-items-center rounded-xl", active ? "bg-primary text-primary-foreground" : "bg-muted text-primary")}>
                 <Icon className="size-5" />
               </span>
-              <span>
-                <span className="block font-semibold">{CATEGORIES[k].name}</span>
+              <span className="relative">
+                <span className="block text-lg font-semibold leading-tight">{CATEGORIES[k].name}</span>
                 <span className="block text-xs text-muted-foreground">{CATEGORIES[k].tagline}</span>
               </span>
             </Link>
@@ -67,14 +88,16 @@ export default async function Explore({ searchParams }: { searchParams: Promise<
       </div>
 
       {mine && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {showAll ? <>Showing <b className="text-foreground">all styles</b></> : <>Showing <b className="text-foreground">{mine.join(" · ")}</b></>}
-          <Link href="/welcome" className="text-primary">Edit</Link>
-          <span aria-hidden>·</span>
-          <Link href={keep({ all: showAll ? undefined : "1", style: undefined })} className="text-primary">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground">Your feed:</span>
+          {(showAll ? ["All styles"] : mine).map((st) => (
+            <span key={st} className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-primary">{st}</span>
+          ))}
+          <Link href="/welcome" className="rounded-full border px-2.5 py-1 text-muted-foreground hover:text-foreground">Edit</Link>
+          <Link href={keep({ all: showAll ? undefined : "1", style: undefined })} className="rounded-full border px-2.5 py-1 text-muted-foreground hover:text-foreground">
             {showAll ? "Only my styles" : "Show all styles"}
           </Link>
-        </p>
+        </div>
       )}
       {!mine && user && (user.role === "STUDENT" || user.role === "BOTH") && (
         <Link href="/welcome" className="block rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm">
@@ -93,7 +116,7 @@ async function Overview({ only }: { only: string[] | null }) {
     lessonQuery("choreo", undefined, ROW, only),
     findCourses(undefined, only),
   ]);
-  const sections: [CategoryKey, React.ReactNode, number][] = [
+  const sections: [CategoryKey, React.ReactNode[], number][] = [
     ["moves", moves.map((s) => <ServiceCard key={s.id} s={s} />), moves.length],
     ["choreo", choreo.map((s) => <ServiceCard key={s.id} s={s} />), choreo.length],
     ["courses", courses.slice(0, ROW).map((t) => <CourseCard key={t.id} t={t} />), courses.length],
@@ -103,7 +126,7 @@ async function Overview({ only }: { only: string[] | null }) {
       {sections.map(([k, cards, n]) => (
         <section key={k} className="space-y-2">
           <div className="flex items-end justify-between">
-            <h2 className="font-serif text-xl">{CATEGORIES[k].name}</h2>
+            <h2 className="kinetic font-serif text-2xl">{CATEGORIES[k].name}</h2>
             <Link href={`/explore?cat=${k}`} className="flex items-center gap-1 text-sm text-primary">See all <ArrowRight className="size-3.5" /></Link>
           </div>
           {n === 0 ? <p className="text-sm text-muted-foreground">Nothing here yet.</p> : <Row>{cards}</Row>}
@@ -127,7 +150,7 @@ async function CategoryView({ cat, style, only, keep }: { cat: CategoryKey; styl
   return (
     <section className="space-y-4">
       <div>
-        <h1 className="font-serif text-2xl">{CATEGORIES[cat].name}</h1>
+        <h2 className="kinetic font-serif text-3xl">{CATEGORIES[cat].name}</h2>
         <p className="text-sm text-muted-foreground">{CATEGORIES[cat].blurb}</p>
       </div>
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4">

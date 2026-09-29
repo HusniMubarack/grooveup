@@ -55,6 +55,30 @@ Production uses [Turso](https://turso.tech) (hosted SQLite) through Prisma's lib
    **Migrations run automatically on every Vercel build** (`vercel-build` → `prisma/migrate.ts`): new columns are added to Turso before the new code goes live, existing data is kept, and if a migration fails the build fails and the previous deployment stays up. Run `pnpm db:migrate` to do the same by hand. `pnpm prisma db seed` is only for (re)loading the demo data, and it wipes the database.
 4. **Check the deployment:** sign in as `admin@grooveup.dev`. The **Setup** card on `/admin` shows the database, whether migrations are up to date, and whether Mux uploads and signed playback are configured (it only shows whether each is set, never the values).
 
+## Landing hero video & motion
+
+The landing page hero plays a looping dance clip behind the headline. It's never part of the first paint: the source is attached only after the page is idle, and skipped for reduced motion, data-saver and 2G/3G connections. Until it plays, or if there's no clip, an animated hip-hop dancer silhouette (pure SVG + CSS, `components/dancer.tsx`) fills the stage. The same dancer is the app's loading and buffering animation.
+
+**Adding the clip**
+1. Pick a free, licence-free clip from Pexels or Pixabay (search "hip hop dance" or "street dance"): a dancer on a dark or plain background, 6–10 s, loopable.
+2. Compress it to about 1–2 MB, 720p, H.264, no audio:
+   ```bash
+   ffmpeg -i input.mp4 -t 10 -vf "scale=-2:720,fps=30" -c:v libx264 -crf 28 -preset slow -pix_fmt yuv420p -movflags +faststart -an public/hero/dance.mp4
+   ```
+3. Commit `public/hero/dance.mp4`. Vercel serves it from its CDN.
+
+Or set `NEXT_PUBLIC_HERO_VIDEO_URL` to a hosted clip's URL (it's read at build time, so redeploy after changing it).
+
+**Scroll motion:** CSS scroll-driven animations (`animation-timeline`) where the browser supports them, with a ~1 KB IntersectionObserver fallback in `components/motion.tsx`. Classes in `app/globals.css`:
+- `.step-in`: cards enter like a dance step.
+- `.kinetic`: headings rise out of a skew.
+- `.lean`: rows lean into view.
+- `.beat-bar`: scroll progress with beat ticks.
+- `.drift` / `.cross`: silhouette parallax.
+- `.tilt`: pointer tilt on desktop.
+
+No animation library is used, and everything is disabled under `prefers-reduced-motion`.
+
 ## Access requests, approvals & chat
 
 Until in-app payments launch, access is granted by hand:

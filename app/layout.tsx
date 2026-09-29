@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Header } from "@/components/header";
 import { MobileNav } from "@/components/mobile-nav";
 import { RouteLoader } from "@/components/route-loader";
+import { Motion } from "@/components/motion";
 import { currentUser } from "@/lib/auth";
 import { unreadCount } from "@/lib/chat";
 
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main className="mx-auto max-w-5xl px-4 pb-24 pt-4 md:pb-10">{children}</main>
         <MobileNav alert={await hasUnread()} />
         <RouteLoader />
+        <Motion />
       </body>
     </html>
   );
